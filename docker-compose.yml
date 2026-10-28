@@ -1,0 +1,157 @@
+# Local development: the whole stack with local PostgreSQL, RabbitMQ and payload storage.
+#   make up      build and start everything
+#   make test    run the backend suite inside the api container
+#
+# Frontend  http://localhost:${FRONTEND_PORT:-8080}   (proxies /api to the api service)
+# API       http://localhost:${API_PORT:-8000}/docs
+# RabbitMQ  http://localhost:${RABBITMQ_MANAGEMENT_PORT:-15672}
+# Receiver  http://localhost:${MOCK_RECEIVER_PORT:-9000}/requests  (endpoints: http://mock-receiver:9000/hooks/ok)
+
+name: heimdall
+
+x-backend: &backend
+  build:
+    context: ./backend
+    args:
+      INSTALL_DEV: "true" # pytest + ruff in the image, so `make test` / `make lint` run in containers
+  image: heimdall-backend:dev
+  restart: unless-stopped
+  env_file:
+    - path: .env
+      required: false
+  environment: &backend-env
+    APP_ENV: development
+    JSON_LOGS: "false"
+    DATABASE_URL: postgresql+asyncpg://heimdall:${DB_PASSWORD:-heimdall}@postgres:5432/heimdall
+    DATABASE_MIGRATION_URL: ""
+    RABBITMQ_URL: amqp://${RABBITMQ_USER:-heimdall}:${RABBITMQ_PASSWORD:-heimdall}@rabbitmq:5672/
+    STORAGE_BACKEND: ${STORAGE_BACKEND:-local}
+    LOCAL_STORAGE_PATH: /data/storage
+    # lets endpoints target the mock-receiver container
+    ALLOW_PRIVATE_DESTINATIONS: "true"
+    FRONTEND_URL: http://localhost:${FRONTEND_PORT:-8080},http://localhost:5173
+    # dev tools write their caches to /tmp: /app is read-only for the app user
+    COVERAGE_FILE: /tmp/.coverage
+    RUFF_CACHE_DIR: /tmp/.ruff_cache
+    PYTEST_ADDOPTS: -o cache_dir=/tmp/.pytest_cache
+    # used by `make test`
+    TEST_DATABASE_URL: postgresql+asyncpg://heimdall:${DB_PASSWORD:-heimdall}@postgres:5432/heimdall_test
+    TEST_RABBITMQ_URL: amqp://${RABBITMQ_USER:-heimdall}:${RABBITMQ_PASSWORD:-heimdall}@rabbitmq:5672/heimdall_test
+  volumes:
+    - payloads:/data/storage
+  networks: [internal]
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: heimdall
+      POSTGRES_USER: heimdall
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-heimdall}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./infrastructure/docker/postgres:/docker-entrypoint-initdb.d:ro
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U heimdall -d heimdall"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks: [internal]
+
+  rabbitmq:
+    image: rabbitmq:4-management-alpine
+    restart: unless-stopped
+    hostname: rabbitmq # node name (and so its data directory) stays stable across recreations
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-heimdall}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-heimdall}
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+      - ./infrastructure/docker/rabbitmq/rabbitmq.conf:/etc/rabbitmq/conf.d/90-heimdall.conf:ro
+    ports:
+      - "127.0.0.1:${RABBITMQ_PORT:-5672}:5672"
+      - "127.0.0.1:${RABBITMQ_MANAGEMENT_PORT:-15672}:15672"
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 5s
+      timeout: 10s
+      retries: 20
+    networks: [internal]
+
+  migrate:
+    <<: *backend
+    command: ["alembic", "upgrade", "head"]
+    restart: "no"
+    healthcheck:
+      disable: true
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  api:
+    <<: *backend
+    ports:
+      - "127.0.0.1:${API_PORT:-8000}:8000"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      rabbitmq:
+        condition: service_healthy
+
+  publisher:
+    <<: *backend
+    command: ["python", "-m", "app.workers.outbox_worker"]
+    healthcheck:
+      disable: true
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      rabbitmq:
+        condition: service_healthy
+
+  worker:
+    <<: *backend
+    command: ["python", "-m", "app.workers.delivery_worker"]
+    healthcheck:
+      disable: true
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      rabbitmq:
+        condition: service_healthy
+
+  mock-receiver:
+    <<: *backend
+    command: ["uvicorn", "app.dev.mock_receiver:app", "--host", "0.0.0.0", "--port", "9000"]
+    ports:
+      - "127.0.0.1:${MOCK_RECEIVER_PORT:-9000}:9000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:9000/requests')"]
+      interval: 10s
+      timeout: 3s
+    depends_on: []
+
+  frontend:
+    build:
+      context: ./frontend
+    image: heimdall-frontend:dev
+    restart: unless-stopped
+    environment:
+      API_UPSTREAM: http://api:8000
+    ports:
+      - "127.0.0.1:${FRONTEND_PORT:-8080}:8080"
+    depends_on:
+      api:
+        condition: service_healthy
+    networks: [internal]
+
+volumes:
+  postgres_data:
+  rabbitmq_data:
+  payloads:
+
+networks:
+  internal:
