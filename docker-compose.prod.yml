@@ -1,0 +1,105 @@
+# Production-like stack: managed PostgreSQL (Neon) and S3-compatible storage come from .env;
+# RabbitMQ runs here with a persistent volume. No dev tools, no mock receiver, nothing
+# but the frontend published on the host.
+#
+#   docker compose -f docker-compose.prod.yml up -d --build      (or: make prod-up)
+
+name: heimdall-prod
+
+x-backend: &backend
+  build:
+    context: ./backend
+  image: heimdall-backend:latest
+  restart: always
+  env_file: [.env]
+  environment: &backend-env
+    APP_ENV: production
+    JSON_LOGS: "true"
+    DATABASE_URL: ${DATABASE_URL:?set DATABASE_URL (Neon pooled URL)}
+    DATABASE_MIGRATION_URL: ${DATABASE_MIGRATION_URL:-}
+    RABBITMQ_URL: amqp://${RABBITMQ_USER:?set RABBITMQ_USER}:${RABBITMQ_PASSWORD:?set RABBITMQ_PASSWORD}@rabbitmq:5672/
+    JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET}
+    ENCRYPTION_KEY: ${ENCRYPTION_KEY:?set ENCRYPTION_KEY}
+    STORAGE_BACKEND: s3
+    ALLOW_PRIVATE_DESTINATIONS: "false"
+  networks: [internal]
+  logging:
+    driver: json-file
+    options: { max-size: "20m", max-file: "5" }
+
+services:
+  rabbitmq:
+    image: rabbitmq:4-management-alpine
+    restart: always
+    hostname: rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:?set RABBITMQ_USER}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:?set RABBITMQ_PASSWORD}
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+      - ./infrastructure/docker/rabbitmq/rabbitmq.conf:/etc/rabbitmq/conf.d/90-heimdall.conf:ro
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 10s
+      retries: 20
+    networks: [internal]
+
+  migrate:
+    <<: *backend
+    command: ["alembic", "upgrade", "head"]
+    restart: "no"
+    healthcheck:
+      disable: true
+
+  api:
+    <<: *backend
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      rabbitmq:
+        condition: service_healthy
+
+  publisher:
+    <<: *backend
+    command: ["python", "-m", "app.workers.outbox_worker"]
+    healthcheck:
+      disable: true
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      rabbitmq:
+        condition: service_healthy
+
+  worker:
+    <<: *backend
+    command: ["python", "-m", "app.workers.delivery_worker"]
+    healthcheck:
+      disable: true
+    deploy:
+      replicas: ${WORKER_REPLICAS:-2} # workers scale independently of the API
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      rabbitmq:
+        condition: service_healthy
+
+  frontend:
+    build:
+      context: ./frontend
+    image: heimdall-frontend:latest
+    restart: always
+    environment:
+      API_UPSTREAM: http://api:8000
+    ports:
+      - "${FRONTEND_PORT:-8080}:8080"
+    depends_on:
+      api:
+        condition: service_healthy
+    networks: [internal]
+
+volumes:
+  rabbitmq_data:
+
+networks:
+  internal:
