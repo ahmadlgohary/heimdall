@@ -132,11 +132,44 @@ jobs:
             frontend/test-results
           if-no-files-found: ignore
 
+  worker:
+    name: Edge worker · types, tests (workerd), bundle
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: serverless/ingestion-worker
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: serverless/ingestion-worker/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generated types are up to date
+        run: |
+          npm run types
+          git diff --exit-code worker-configuration.d.ts
+
+      - name: TypeScript
+        run: npm run typecheck
+
+      - name: Tests (inside the Workers runtime)
+        run: npm test
+
+      - name: Bundle (production config, no upload)
+        run: npx wrangler deploy --env production --dry-run --outdir dist
+
   stack:
     name: Docker stack · build and end-to-end smoke test
     runs-on: ubuntu-latest
     timeout-minutes: 25
-    needs: [backend, frontend]
+    needs: [backend, frontend, worker]
     steps:
       - uses: actions/checkout@v4
 

@@ -1,0 +1,2 @@
+# Local secrets for `npm run dev` (copy to .dev.vars). Must match WORKER_SHARED_SECRET in the API's .env.
+WORKER_SHARED_SECRET=change-me

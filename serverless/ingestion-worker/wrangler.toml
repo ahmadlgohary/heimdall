@@ -1,0 +1,30 @@
+# Cloudflare Worker: public edge ingestion gateway (plan §7).
+# It validates and forwards requests to the API's internal ingestion route; the API
+# remains responsible for persistence, idempotency and queuing.
+#
+# Secret (never in this file):  npx wrangler secret put WORKER_SHARED_SECRET [--env production]
+# Local secret:                 cp .dev.vars.example .dev.vars
+
+name = "heimdall-ingestion"
+main = "src/index.ts"
+compatibility_date = "2026-11-01"
+workers_dev = true
+
+[vars]
+API_ORIGIN = "http://localhost:8000"
+MAX_BODY_BYTES = "262144"        # 256 KB, same limit the API enforces
+UPSTREAM_TIMEOUT_MS = "10000"
+
+[observability]
+enabled = true
+
+[env.production]
+name = "heimdall-ingestion"
+workers_dev = false
+# Public route from the spec: POST https://ingest.yourdomain.com/{endpoint_id}
+routes = [{ pattern = "ingest.yourdomain.com", custom_domain = true }]
+
+[env.production.vars]
+API_ORIGIN = "https://heimdall-nnjp.onrender.com"
+MAX_BODY_BYTES = "262144"
+UPSTREAM_TIMEOUT_MS = "10000"

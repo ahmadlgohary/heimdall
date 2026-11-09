@@ -90,19 +90,32 @@ e2e: ## Frontend end-to-end tests (Playwright, against the mock API)
 smoke: ## End-to-end check of the running stack (ingest -> deliver)
 	./infrastructure/scripts/smoke-test.sh
 
+.PHONY: test-worker
+test-worker: ## Edge worker tests (Vitest inside the Workers runtime)
+	cd serverless/ingestion-worker && npm test
+
+.PHONY: worker-dev
+worker-dev: ## Run the edge worker locally on :8787 in front of the local API
+	cd serverless/ingestion-worker && npx wrangler dev --port 8787 --var API_ORIGIN:http://localhost:$(call port,API_PORT,8000)
+
+.PHONY: worker-deploy
+worker-deploy: ## Deploy the edge worker to Cloudflare (production environment)
+	cd serverless/ingestion-worker && npm run deploy
+
 .PHONY: lint
 lint: ## Lint and type-check backend (in container) and frontend
 	$(COMPOSE) exec -T api ruff check .
 	$(COMPOSE) exec -T api ruff format --check .
 	$(COMPOSE) exec -T api alembic check
 	cd frontend && npm run lint && npm run typecheck
+	cd serverless/ingestion-worker && npm run typecheck
 
 .PHONY: fmt
 fmt: ## Auto-format the backend
 	cd backend && uv run ruff format . && uv run ruff check --fix .
 
 .PHONY: check
-check: lint test test-frontend smoke ## Everything CI checks, against the running stack
+check: lint test test-frontend test-worker smoke ## Everything CI checks, against the running stack
 
 ## ---------- production ----------
 
