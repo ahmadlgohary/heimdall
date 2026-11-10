@@ -90,7 +90,7 @@ export function AttemptTrace({ delivery, attempts, selectedId, onSelect }: Attem
                 <div className="mt-2 grid justify-items-center gap-0.5 text-center">
                   <span className={cn('text-xs', selected ? 'text-foreground' : 'text-faint')}>#{a.attempt_number}</span>
                   <span className={cn('mono-tight text-sm font-medium', ok ? 'text-success' : 'text-danger')}>
-                    {a.http_status ?? (a.error_message?.toLowerCase().includes('timeout') ? 'timeout' : 'error')}
+                    {a.http_status ?? (/timed out|timeout/i.test(a.error_message ?? '') ? 'timeout' : 'error')}
                   </span>
                   <span className="tabular text-xs text-muted">{formatMs(a.duration_ms)}</span>
                 </div>

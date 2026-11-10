@@ -67,6 +67,10 @@ clean: ## Stop the stack and DELETE its volumes (database, broker, payloads)
 	@read -p "Delete all local Heimdall data? [y/N] " ok && [[ $$ok == [yY] ]]
 	$(COMPOSE) down -v --remove-orphans
 
+.PHONY: seed
+seed: ## Create or reset the demo account with sample history (make seed args="--no-live")
+	$(COMPOSE) exec -T api python -m app.scripts.seed $(args)
+
 ## ---------- checks ----------
 
 .PHONY: test-services
@@ -126,6 +130,10 @@ prod-up: ## Start the production stack (needs Neon/S3 settings in .env)
 .PHONY: prod-down
 prod-down: ## Stop the production stack
 	$(PROD) down
+
+.PHONY: prod-seed
+prod-seed: ## Create or reset the public demo account in production (needs DEMO_ENABLED=true)
+	$(PROD) exec -T api python -m app.scripts.seed $(args)
 
 .PHONY: prod-logs
 prod-logs: ## Follow production logs

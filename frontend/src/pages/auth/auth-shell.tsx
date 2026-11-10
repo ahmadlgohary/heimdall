@@ -1,6 +1,5 @@
 import type { ReactNode } from 'react'
 import { Logo } from '@/components/layout/logo'
-import { IS_MOCK } from '@/components/layout/app-sidebar'
 
 /** A quiet backdrop: one delivery wire crossing the page behind the form. */
 function BackdropWire() {
@@ -29,7 +28,19 @@ function BackdropWire() {
   )
 }
 
-export function AuthShell({ title, subtitle, children, footer }: { title: string; subtitle: ReactNode; children: ReactNode; footer: ReactNode }) {
+export function AuthShell({
+  title,
+  subtitle,
+  children,
+  footer,
+  aside,
+}: {
+  title: string
+  subtitle: ReactNode
+  children: ReactNode
+  footer: ReactNode
+  aside?: ReactNode
+}) {
   return (
     <div className="relative flex min-h-dvh flex-col items-center justify-center overflow-hidden px-4 py-10">
       <BackdropWire />
@@ -41,11 +52,7 @@ export function AuthShell({ title, subtitle, children, footer }: { title: string
           <div className="mt-6">{children}</div>
         </div>
         <p className="mt-6 text-center text-base text-muted">{footer}</p>
-        {IS_MOCK && (
-          <p className="mt-3 text-center text-sm text-faint">
-            Mock API is on. Sign in with demo@heimdall.dev and DemoPassword123.
-          </p>
-        )}
+        {aside}
       </main>
     </div>
   )

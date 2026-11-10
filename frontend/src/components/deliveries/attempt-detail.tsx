@@ -16,7 +16,7 @@ function parseJson(body: string | null) {
 }
 
 /** Explains a failed attempt as a problem at the destination, not in Heimdall. */
-function DestinationNote({ attempt }: { attempt: DeliveryAttempt }) {
+function DestinationNote({ attempt, final }: { attempt: DeliveryAttempt; final: boolean }) {
   const s = attempt.http_status
   if (s != null && s >= 200 && s < 300) return null
   const noResponse = s == null
@@ -35,15 +35,20 @@ function DestinationNote({ attempt }: { attempt: DeliveryAttempt }) {
         <p className="text-muted">
           {attempt.error_message ? `${attempt.error_message}. ` : ''}
           {retryable
-            ? 'This counts as a temporary failure, so Heimdall retries it on the backoff schedule.'
-            : 'Client errors like this aren’t retried. Fix the receiver, then replay the event.'}
+            ? final
+              ? 'Heimdall retried on the backoff schedule, but every attempt failed. Fix the receiver, then replay the event.'
+              : 'This counts as a temporary failure, so Heimdall retries it on the backoff schedule.'
+            : s != null && s >= 300 && s < 400
+              ? 'Redirects aren’t retried. Point the endpoint at the final URL, then replay the event.'
+              : 'Client errors like this aren’t retried. Fix the receiver, then replay the event.'}
         </p>
       </div>
     </div>
   )
 }
 
-export function AttemptDetail({ attempt }: { attempt: DeliveryAttempt }) {
+/** `final`: this was the delivery's last attempt and it failed, so nothing more will be retried. */
+export function AttemptDetail({ attempt, final = false }: { attempt: DeliveryAttempt; final?: boolean }) {
   const json = useMemo(() => parseJson(attempt.response_body), [attempt.response_body])
   const headers = Object.entries(attempt.response_headers ?? {})
 
@@ -70,7 +75,7 @@ export function AttemptDetail({ attempt }: { attempt: DeliveryAttempt }) {
         </div>
       </dl>
 
-      <DestinationNote attempt={attempt} />
+      <DestinationNote attempt={attempt} final={final} />
 
       {headers.length > 0 && (
         <details className="group rounded-md border border-border" open>

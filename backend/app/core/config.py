@@ -88,6 +88,17 @@ class Settings(BaseSettings):
     run_publisher_in_api: bool = False
     outbox_poll_interval: float = 0.5
 
+    # Demo environment (plan §14.3). The demo credentials are public by design: they're shown
+    # on the sign-in page. `python -m app.scripts.seed` creates and resets the account.
+    demo_enabled: bool = False
+    demo_email: str = "demo@heimdall.dev"
+    demo_password: str = "DemoPassword123"  # noqa: S105 (public by design)
+    # Serve the built-in test receiver at /demo-receiver so demo endpoints have a public,
+    # always-on destination. DEMO_RECEIVER_URL is how the *worker* reaches it
+    # (defaults to API_URL + /demo-receiver; in docker compose, the internal service URL).
+    demo_receiver_enabled: bool = False
+    demo_receiver_url: str = ""
+
     auth_rate_limit_per_minute: int = 20
     ingest_rate_limit_per_minute: int = 600
 
@@ -116,6 +127,13 @@ class Settings(BaseSettings):
     @property
     def is_production(self) -> bool:
         return self.app_env == "production"
+
+    @property
+    def demo_receiver_base(self) -> str:
+        return (self.demo_receiver_url or f"{self.api_url.rstrip('/')}/demo-receiver").rstrip("/")
+
+    def is_demo_email(self, email: str) -> bool:
+        return self.demo_enabled and email.lower() == self.demo_email.lower()
 
     @property
     def s3_encryption(self) -> str:

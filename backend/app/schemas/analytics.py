@@ -37,6 +37,7 @@ class ActivityItem(BaseModel):
     http_status: int | None
     duration_ms: int | None
     created_at: datetime
+    source: str = "live"
 
 
 class DashboardActivity(BaseModel):

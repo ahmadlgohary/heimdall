@@ -8,6 +8,7 @@ import { MonoId, CopyButton } from '@/components/common/copy-button'
 import { JsonViewer } from '@/components/common/json-viewer'
 import { MetaList, Panel } from '@/components/common/page-header'
 import { ErrorState } from '@/components/common/states'
+import { SampleTag } from '@/components/common/sample-tag'
 import { StatusPill } from '@/components/common/status'
 import { Button } from '@/components/ui/button'
 import { ConfirmDialog } from '@/components/ui/dialog'
@@ -99,6 +100,15 @@ export default function EventDetailPage() {
             title="Delivery"
             description={live ? 'Updating live while delivery is in progress.' : 'Select an attempt to see the response.'}
           >
+            {e?.source === 'demo_fixture' && (
+              <p className="flex items-start gap-2.5 border-b border-dashed border-border-strong bg-sunken/50 px-4 py-3 text-sm text-muted sm:px-5">
+                <SampleTag className="mt-px" />
+                <span>
+                  This event is sample data from the demo seed. Its original delivery attempts were simulated and never
+                  sent. Replaying it sends it for real, to the demo’s test receiver.
+                </span>
+              </p>
+            )}
             {deliveries.isPending ? (
               <div className="p-5">
                 <Skeleton className="h-28" />

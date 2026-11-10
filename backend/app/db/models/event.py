@@ -18,6 +18,13 @@ class EventStatus:
     SETTLED = (DELIVERED, FAILED)
 
 
+class EventSource:
+    LIVE = "live"
+    # Sample history created by the seed script. Its delivery attempts were simulated,
+    # never sent; the UI labels these so they can't pass for real processing.
+    DEMO_FIXTURE = "demo_fixture"
+
+
 class Event(UUIDPrimaryKey, CreatedAt, Base):
     __tablename__ = "events"
     __table_args__ = (
@@ -40,5 +47,6 @@ class Event(UUIDPrimaryKey, CreatedAt, Base):
     payload_hash: Mapped[str] = mapped_column(String(64))
     idempotency_key: Mapped[str | None] = mapped_column(String(255))
     status: Mapped[str] = mapped_column(String(30), default=EventStatus.QUEUED)
+    source: Mapped[str] = mapped_column(String(20), default=EventSource.LIVE, server_default=EventSource.LIVE)
 
     endpoint: Mapped[Endpoint] = relationship(lazy="raise", passive_deletes=True)

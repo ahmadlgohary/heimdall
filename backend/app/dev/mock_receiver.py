@@ -1,6 +1,7 @@
 """A tiny webhook receiver for local development, demos and E2E tests.
 
 Run: uv run uvicorn app.dev.mock_receiver:app --port 9000
+The API also serves it at /demo-receiver when DEMO_RECEIVER_ENABLED=true.
 
 Point an endpoint at http://localhost:9000/hooks/<behaviour> (with
 ALLOW_PRIVATE_DESTINATIONS=true in development):
@@ -9,7 +10,7 @@ ALLOW_PRIVATE_DESTINATIONS=true in development):
   fail       500
   flaky      500 on attempt 1, then 200
   notfound   404 (not retried)
-  ratelimit  429 with Retry-After: 40
+  ratelimit  429 with Retry-After: 40 on attempt 1, then 200
   slow       sleeps past the delivery timeout
   switch     returns whatever POST /control/switch set (default 500)
 
@@ -22,17 +23,17 @@ import os
 from collections import deque
 from datetime import UTC, datetime
 
-from fastapi import FastAPI, Request, Response
+from fastapi import APIRouter, FastAPI, Request, Response
 
 from app.utils.signatures import verify_signature
 
-app = FastAPI(title="Heimdall mock receiver")
+router = APIRouter(tags=["test receiver"])
 received: deque[dict] = deque(maxlen=100)
 state = {"switch": 500}
 SECRET = os.environ.get("MOCK_RECEIVER_SECRET", "")
 
 
-@app.post("/hooks/{behaviour}")
+@router.post("/hooks/{behaviour}")
 async def hook(behaviour: str, request: Request) -> Response:
     body = await request.body()
     headers = request.headers
@@ -69,7 +70,9 @@ async def hook(behaviour: str, request: Request) -> Response:
         case "notfound":
             return Response("<h1>404 Not Found</h1>", status_code=404, media_type="text/html")
         case "ratelimit":
-            return Response('{"error":"slow down"}', status_code=429, headers={"Retry-After": "40"})
+            if attempt == 1:
+                return Response('{"error":"slow down"}', status_code=429, headers={"Retry-After": "40"})
+            return Response('{"received":true}', media_type="application/json")
         case "slow":
             await asyncio.sleep(15)
             return Response("late")
@@ -79,12 +82,16 @@ async def hook(behaviour: str, request: Request) -> Response:
     return Response('{"error":"unknown behaviour"}', status_code=404, media_type="application/json")
 
 
-@app.post("/control/switch")
+@router.post("/control/switch")
 async def set_switch(status: int = 200) -> dict:
     state["switch"] = status
     return state
 
 
-@app.get("/requests")
+@router.get("/requests")
 async def requests() -> list[dict]:
     return list(received)
+
+
+app = FastAPI(title="Heimdall mock receiver")
+app.include_router(router)

@@ -10,6 +10,7 @@ import { EmptyState, ErrorState } from '@/components/common/states'
 import { Button } from '@/components/ui/button'
 import { Segmented } from '@/components/ui/segmented'
 import { Skeleton } from '@/components/ui/skeleton'
+import { useAuth } from '@/contexts/auth-context'
 import { useDashboardActivity, useDashboardStats } from '@/hooks/use-analytics'
 import { RANGE_OPTIONS, RANGE_TEXT } from '@/lib/constants'
 import { formatMs, formatNumber, formatPercent } from '@/lib/utils'
@@ -17,6 +18,7 @@ import type { TimeRange } from '@/types/api'
 
 export default function DashboardPage() {
   const [range, setRange] = useState<TimeRange>('24h')
+  const isDemo = useAuth().user?.is_demo ?? false
   const stats = useDashboardStats(range)
   const activity = useDashboardActivity()
 
@@ -31,6 +33,8 @@ export default function DashboardPage() {
         description={`How your webhooks performed over the ${RANGE_TEXT[range]}.`}
         actions={<Segmented label="Time range" value={range} onValueChange={setRange} options={RANGE_OPTIONS} />}
       />
+
+      {isDemo && <DemoNotice />}
 
       {stats.isError ? (
         <Panel>
@@ -152,5 +156,22 @@ export default function DashboardPage() {
         </div>
       )}
     </>
+  )
+}
+
+/** The shared demo account: say what's sample data and what's real (plan §14.3). */
+function DemoNotice() {
+  return (
+    <div className="mb-5 flex flex-col gap-3 rounded-lg border border-dashed border-border-strong px-4 py-3.5 sm:flex-row sm:items-center sm:justify-between sm:px-5">
+      <p className="max-w-[72ch] text-sm text-muted">
+        <span className="font-medium text-foreground">You’re in the shared demo account.</span> Events marked{' '}
+        <span className="rounded-sm border border-dashed border-border-strong px-1 text-xs">Sample</span> are seeded
+        history with simulated attempts. Anything you send now, like a test event or a replay, is delivered for real to
+        a built-in test receiver. The account is reset regularly.
+      </p>
+      <Button asChild variant="secondary" size="sm" className="shrink-0">
+        <Link to="/endpoints">Send a test event</Link>
+      </Button>
+    </div>
   )
 }

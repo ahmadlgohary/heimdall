@@ -229,6 +229,7 @@ class AnalyticsService:
                     http_status=a.http_status if a else None,
                     duration_ms=a.duration_ms if a else None,
                     created_at=event.created_at,
+                    source=event.source,
                 )
             )
         return items

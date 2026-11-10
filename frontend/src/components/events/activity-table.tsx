@@ -1,4 +1,5 @@
 import { useNavigate, Link } from 'react-router'
+import { SampleTag } from '@/components/common/sample-tag'
 import { HttpCode, StatusPill } from '@/components/common/status'
 import { Skeleton } from '@/components/ui/skeleton'
 import { formatMs, formatShortTime } from '@/lib/utils'
@@ -42,9 +43,12 @@ export function ActivityTable({ items, loading }: { items: ActivityItem[]; loadi
               className="cursor-pointer border-b border-border last:border-0 hover:bg-surface-hover"
             >
               <td className="px-5 py-2.5">
-                <Link to={`/events/${it.event_id}`} className="font-medium hover:text-primary" onClick={(e) => e.stopPropagation()}>
-                  {it.event_type}
-                </Link>
+                <span className="inline-flex items-center gap-2">
+                  <Link to={`/events/${it.event_id}`} className="font-medium hover:text-primary" onClick={(e) => e.stopPropagation()}>
+                    {it.event_type}
+                  </Link>
+                  {it.source === 'demo_fixture' && <SampleTag />}
+                </span>
               </td>
               <td className="max-w-48 truncate px-3 py-2.5 text-muted">{it.endpoint_name}</td>
               <td className="px-3 py-2.5">

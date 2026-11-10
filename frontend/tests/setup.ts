@@ -1,11 +1,15 @@
 import '@testing-library/jest-dom/vitest'
-import { cleanup } from '@testing-library/react'
+import { cleanup, configure } from '@testing-library/react'
 import { setupServer } from 'msw/node'
 import { afterAll, afterEach, beforeAll, beforeEach } from 'vitest'
 import { tokenStore } from '@/lib/auth'
 import { handlers, mockConfig, resetMockDb } from '@/mocks/handlers'
 
 export const server = setupServer(...handlers)
+
+// Pages lazy-load and restore the session before fetching; under a busy parallel run
+// that can take just over the 1 s default.
+configure({ asyncUtilTimeout: 3000 })
 
 // jsdom gaps used by Radix, Recharts and CodeMirror
 class ResizeObserverStub {

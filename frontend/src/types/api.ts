@@ -33,7 +33,18 @@ export interface User {
   id: UUID
   email: string
   created_at?: ISODate
+  /** the shared demo account */
+  is_demo?: boolean
 }
+
+export interface DemoInfo {
+  enabled: boolean
+  email: string | null
+  password: string | null
+}
+
+/** "demo_fixture": seeded sample history whose delivery attempts were simulated, never sent. */
+export type EventSource = 'live' | 'demo_fixture'
 
 export interface AuthResponse {
   user: User
@@ -94,6 +105,7 @@ export interface EventSummary {
   payload_size: number
   idempotency_key: string | null
   created_at: ISODate
+  source?: EventSource
 }
 
 export interface Delivery {
@@ -183,6 +195,7 @@ export interface ActivityItem {
   http_status: number | null
   duration_ms: number | null
   created_at: ISODate
+  source?: EventSource
 }
 
 export interface DashboardActivity {

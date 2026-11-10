@@ -17,6 +17,7 @@ import {
   createDelivery,
   createEvent,
   db,
+  DEMO,
   deliveriesFor,
   eventStatus,
   latestDelivery,
@@ -116,6 +117,7 @@ function toSummary(ev: EventRec): EventSummary {
     payload_size: ev.payload_size,
     idempotency_key: ev.idempotency_key,
     created_at: ev.created_at,
+    source: ev.source,
   }
 }
 
@@ -286,13 +288,13 @@ export const handlers = [
     const { email, password } = (await request.json()) as { email: string; password: string }
     if (!email || !/^\S+@\S+\.\S+$/.test(email)) return error(422, 'VALIDATION_ERROR', 'Enter a valid email address.')
     if (!password || password.length < 12) return error(422, 'VALIDATION_ERROR', 'Password must be at least 12 characters.')
-    if (db.users.some((u) => u.email.toLowerCase() === email.toLowerCase()))
+    if (email.toLowerCase() === DEMO.email || db.users.some((u) => u.email.toLowerCase() === email.toLowerCase()))
       return error(409, 'EMAIL_TAKEN', 'An account with this email already exists.')
     const user = { id: uuid(), email, password, created_at: new Date().toISOString() }
     db.users.push(user)
     setSession(user.id)
     return HttpResponse.json(
-      { user: { id: user.id, email, created_at: user.created_at }, access_token: tokenFor(user.id), token_type: 'bearer' },
+      { user: { id: user.id, email, created_at: user.created_at, is_demo: false }, access_token: tokenFor(user.id), token_type: 'bearer' },
       { status: 201 },
     )
   }),
@@ -305,7 +307,7 @@ export const handlers = [
     if (!user || user.password !== password) return error(401, 'INVALID_CREDENTIALS', 'Incorrect email or password.')
     setSession(user.id)
     return HttpResponse.json({
-      user: { id: user.id, email: user.email, created_at: user.created_at },
+      user: { id: user.id, email: user.email, created_at: user.created_at, is_demo: user.email === DEMO.email },
       access_token: tokenFor(user.id),
       token_type: 'bearer',
     })
@@ -329,16 +331,22 @@ export const handlers = [
 
   http.get(`${BASE}/auth/me`, authed(({ userId }) => {
     const u = db.users.find((x) => x.id === userId)!
-    return HttpResponse.json({ id: u.id, email: u.email, created_at: u.created_at })
+    return HttpResponse.json({ id: u.id, email: u.email, created_at: u.created_at, is_demo: u.email === DEMO.email })
   })),
 
   http.post(`${BASE}/auth/change-password`, authed(async ({ request, userId }) => {
     const body = (await request.json()) as { current_password: string; new_password: string }
     const u = db.users.find((x) => x.id === userId)!
+    if (u.email === DEMO.email) return error(403, 'DEMO_ACCOUNT', 'The demo account’s password can’t be changed.')
     if (u.password !== body.current_password) return error(400, 'INVALID_PASSWORD', 'Current password is incorrect.')
     u.password = body.new_password
     return new HttpResponse(null, { status: 204 })
   })),
+
+  http.get(`${BASE}/demo`, async () => {
+    await latency()
+    return HttpResponse.json({ enabled: true, email: DEMO.email, password: DEMO.password })
+  }),
 
   /* dashboard & analytics */
   http.get(`${BASE}/dashboard/stats`, authed(({ url, userId }) => {
@@ -377,6 +385,7 @@ export const handlers = [
         http_status: last?.http_status ?? null,
         duration_ms: last?.duration_ms ?? null,
         created_at: ev.created_at,
+        source: ev.source,
       }
     })
     return HttpResponse.json({ items })

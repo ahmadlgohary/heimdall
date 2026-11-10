@@ -90,6 +90,10 @@ def create_app(settings: Settings | None = None, *, storage: PayloadStorage | No
     register_exception_handlers(app)
     app.include_router(health_router)
     app.include_router(api_router)
+    if settings.demo_receiver_enabled:
+        from app.dev.mock_receiver import router as receiver_router
+
+        app.include_router(receiver_router, prefix="/demo-receiver", include_in_schema=False)
     return app
 
 

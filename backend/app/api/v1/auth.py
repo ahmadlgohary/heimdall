@@ -4,7 +4,7 @@ from fastapi import APIRouter, Cookie, Depends, Response, status
 
 from app.api.dependencies import CurrentUser, SessionDep, SettingsDep, auth_rate_limit
 from app.core.config import Settings
-from app.core.exceptions import Unauthorized
+from app.core.exceptions import Conflict, Forbidden, Unauthorized
 from app.schemas.auth import (
     AuthResponse,
     ChangePasswordRequest,
@@ -43,9 +43,13 @@ def _clear_refresh_cookie(response: Response, settings: Settings) -> None:
     )
 
 
+def user_out(user, settings: Settings) -> UserOut:
+    return UserOut.model_validate(user).model_copy(update={"is_demo": settings.is_demo_email(user.email)})
+
+
 def _auth_response(session: Session, settings: Settings) -> AuthResponse:
     return AuthResponse(
-        user=UserOut.model_validate(session.user),
+        user=user_out(session.user, settings),
         access_token=session.access.token,
         expires_in=settings.jwt_access_token_expire_minutes * 60,
     )
@@ -58,6 +62,8 @@ RefreshCookie = Annotated[str | None, Cookie(alias=REFRESH_COOKIE)]
 async def register(
     body: RegisterRequest, response: Response, db: SessionDep, settings: SettingsDep
 ) -> AuthResponse:
+    if settings.is_demo_email(body.email):
+        raise Conflict("This address is reserved for the demo account.", code="EMAIL_TAKEN")
     session = await AuthService(db, settings).register(body.email, body.password)
     _set_refresh_cookie(response, session, settings)
     return _auth_response(session, settings)
@@ -99,8 +105,8 @@ async def logout(
 
 
 @router.get("/me")
-async def me(user: CurrentUser) -> UserOut:
-    return UserOut.model_validate(user)
+async def me(user: CurrentUser, settings: SettingsDep) -> UserOut:
+    return user_out(user, settings)
 
 
 @router.post(
@@ -113,4 +119,6 @@ async def change_password(
     settings: SettingsDep,
     token: RefreshCookie = None,
 ) -> None:
+    if settings.is_demo_email(user.email):
+        raise Forbidden("The demo account’s password can’t be changed.", code="DEMO_ACCOUNT")
     await AuthService(db, settings).change_password(user, body.current_password, body.new_password, token)

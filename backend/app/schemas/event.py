@@ -36,6 +36,8 @@ class EventSummary(BaseModel):
     payload_size: int
     idempotency_key: str | None
     created_at: datetime
+    # "live", or "demo_fixture" for seeded sample history whose attempts were simulated
+    source: str = "live"
 
 
 class DeliveryOut(BaseModel):

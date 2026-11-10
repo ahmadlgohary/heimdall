@@ -29,6 +29,10 @@ x-backend: &backend
     LOCAL_STORAGE_PATH: /data/storage
     # lets endpoints target the mock-receiver container
     ALLOW_PRIVATE_DESTINATIONS: "true"
+    # demo environment: `make seed` creates the account; its endpoints use the API's built-in receiver
+    DEMO_ENABLED: ${DEMO_ENABLED:-true}
+    DEMO_RECEIVER_ENABLED: "true"
+    DEMO_RECEIVER_URL: http://api:8000/demo-receiver
     FRONTEND_URL: http://localhost:${FRONTEND_PORT:-8080},http://localhost:5173
     # dev tools write their caches to /tmp: /app is read-only for the app user
     COVERAGE_FILE: /tmp/.coverage

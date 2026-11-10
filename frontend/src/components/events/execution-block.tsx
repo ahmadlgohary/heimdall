@@ -76,7 +76,10 @@ export function ExecutionBlock({ delivery, defaultOpen }: { delivery: Delivery; 
         )}
         {open && selected && (
           <div className="mt-4 animate-fade-in rounded-md border border-border bg-background/40 p-4">
-            <AttemptDetail attempt={selected} />
+            <AttemptDetail
+              attempt={selected}
+              final={delivery.status === 'failed' && selected.id === attempts[attempts.length - 1]?.id}
+            />
           </div>
         )}
       </div>

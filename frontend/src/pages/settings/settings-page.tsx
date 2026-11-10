@@ -114,7 +114,15 @@ export default function SettingsPage() {
       </Section>
 
       <Section title="Password" description="Changing your password signs out your other sessions.">
-        <ChangePasswordForm />
+        {user?.is_demo ? (
+          <Panel bodyClassName="p-4 sm:p-5">
+            <p className="text-base text-muted">
+              The demo account is shared, so its password can’t be changed. Create your own account to try this.
+            </p>
+          </Panel>
+        ) : (
+          <ChangePasswordForm />
+        )}
       </Section>
 
       <Section title="Appearance" description="Saved in this browser.">

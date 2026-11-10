@@ -5,7 +5,7 @@ import { EditorView } from '@codemirror/view'
 import { tags as t } from '@lezer/highlight'
 import CodeMirror, { type ReactCodeMirrorRef } from '@uiw/react-codemirror'
 import { ChevronsDownUp, ChevronsUpDown, WrapText } from 'lucide-react'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { cn, formatBytes } from '@/lib/utils'
 import { CopyButton } from './copy-button'
@@ -77,16 +77,17 @@ export function JsonViewer({ value, className, maxHeight = 520, title = 'JSON' }
     [wrap, title],
   )
 
-  // Line heights are measured on mount; re-measure once the mono webfont is in.
-  useEffect(() => {
-    let cancelled = false
-    document.fonts?.ready.then(() => {
-      if (!cancelled) ref.current?.view?.requestMeasure()
-    })
-    return () => {
-      cancelled = true
+  /**
+   * Re-measure once the mono webfont has loaded: CodeMirror measures line heights when
+   * it's created, and the font only starts loading once text uses it. (Editors that
+   * start off-screen measure themselves when scrolled into view.)
+   */
+  const onCreateEditor = (view: EditorView) => {
+    const remeasure = () => {
+      if (view.dom.isConnected) view.requestMeasure()
     }
-  }, [])
+    document.fonts?.load?.('12.5px "Martian Mono Variable"').then(remeasure, remeasure)
+  }
 
   const run = (cmd: typeof foldAll) => {
     const view = ref.current?.view
@@ -124,6 +125,7 @@ export function JsonViewer({ value, className, maxHeight = 520, title = 'JSON' }
           value={text}
           theme="none"
           extensions={extensions}
+          onCreateEditor={onCreateEditor}
           basicSetup={{
             lineNumbers: true,
             foldGutter: false,

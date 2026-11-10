@@ -91,7 +91,7 @@ export default function DeliveryDetailPage() {
 
           {selected && (
             <Panel id="response" title={`Attempt ${selected.attempt_number} response`} bodyClassName="p-4 sm:p-5">
-              <AttemptDetail attempt={selected} />
+              <AttemptDetail attempt={selected} final={d?.status === 'failed' && selected.id === list[list.length - 1]?.id} />
             </Panel>
           )}
         </div>

@@ -151,6 +151,7 @@ class EventService:
                 payload_size=e.payload_size,
                 idempotency_key=e.idempotency_key,
                 created_at=e.created_at,
+                source=e.source,
             )
             for e, name, attempts in rows
         ]
@@ -176,6 +177,7 @@ class EventService:
             payload_size=event.payload_size,
             idempotency_key=event.idempotency_key,
             created_at=event.created_at,
+            source=event.source,
             endpoint_url=endpoint.url,
             endpoint_enabled=endpoint.enabled,
             latest_delivery=delivery_out(latest, last) if latest else None,

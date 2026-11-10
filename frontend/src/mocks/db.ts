@@ -47,6 +47,7 @@ export interface EndpointRec extends Omit<Endpoint, 'stats'> {
   profile: Profile
 }
 export interface EventRec {
+  source: 'live' | 'demo_fixture'
   id: string
   endpoint_id: string
   event_type: string
@@ -278,6 +279,7 @@ export function createEvent(endpoint: EndpointRec, type: string, createdAt: stri
   const id = uuid()
   const payload = payloadFor(type, id, createdAt)
   const ev: EventRec = {
+    source: 'live',
     id,
     endpoint_id: endpoint.id,
     event_type: type,
@@ -403,6 +405,9 @@ export function seed() {
     const d = createDelivery(ev, 'manual', { ...profileFor('solid'), ok: 1 }, at.toISOString())
     advance(d, now)
   }
+
+  // everything above is sample history, labelled like the real seed script's fixtures
+  for (const e of db.events) e.source = 'demo_fixture'
 
   // pin one recent event mid-retry so the countdown is always demonstrable
   const flaky = endpoints[2].rec

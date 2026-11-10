@@ -1,5 +1,6 @@
 import { ArrowDown, ArrowUp } from 'lucide-react'
 import { Link, useNavigate } from 'react-router'
+import { SampleTag } from '@/components/common/sample-tag'
 import { StatusPill } from '@/components/common/status'
 import { Skeleton } from '@/components/ui/skeleton'
 import { formatDateTime, formatShortTime, shortId } from '@/lib/utils'
@@ -77,7 +78,12 @@ export function EventsTable({ events, loading, hideEndpoint, sort = '-created_at
                     {shortId(e.id, 'evt_')}
                   </Link>
                 </td>
-                <td className="px-3 py-2.5 font-medium">{e.event_type}</td>
+                <td className="px-3 py-2.5 font-medium">
+                  <span className="inline-flex items-center gap-2">
+                    {e.event_type}
+                    {e.source === 'demo_fixture' && <SampleTag />}
+                  </span>
+                </td>
                 {!hideEndpoint && <td className="max-w-48 truncate px-3 py-2.5 text-muted">{e.endpoint_name}</td>}
                 <td className="px-3 py-2.5">
                   <StatusPill status={e.status} />
@@ -97,7 +103,10 @@ export function EventsTable({ events, loading, hideEndpoint, sort = '-created_at
           <li key={e.id}>
             <Link to={`/events/${e.id}`} className="grid grid-cols-[minmax(0,1fr)] gap-1.5 px-4 py-3 hover:bg-surface-hover">
               <div className="flex items-center justify-between gap-3">
-                <span className="truncate font-medium">{e.event_type}</span>
+                <span className="flex min-w-0 items-center gap-2">
+                  <span className="truncate font-medium">{e.event_type}</span>
+                  {e.source === 'demo_fixture' && <SampleTag />}
+                </span>
                 <StatusPill status={e.status} />
               </div>
               <div className="flex items-center gap-3 text-sm text-muted">

@@ -57,6 +57,8 @@ class UserOut(ORMModel):
     id: uuid.UUID
     email: str
     created_at: datetime
+    # the shared demo account: the UI labels sample data and locks the password
+    is_demo: bool = False
 
 
 class TokenResponse(BaseModel):

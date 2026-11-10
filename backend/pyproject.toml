@@ -47,6 +47,7 @@ ignore = [
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["S104", "S105", "S106", "S311"]
 "app/dev/**" = ["S311"]
+"app/scripts/**" = ["S311"]  # sample data, not security
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
