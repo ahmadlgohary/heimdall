@@ -157,3 +157,14 @@ async def test_auth_endpoints_are_rate_limited(client, settings):
         statuses.append(res.status_code)
     assert statuses[-1] == 429
     assert "retry-after" in res.headers
+
+
+async def test_refresh_has_its_own_rate_limit(client, settings):
+    """Using up the login budget must not sign people out on their next page load."""
+    await register(client, "budget@example.com")
+    for _ in range(settings.auth_rate_limit_per_minute + 2):
+        await client.post("/api/v1/auth/login", json={"email": "x@example.com", "password": "Whatever123"})
+    assert (
+        await client.post("/api/v1/auth/login", json={"email": "x@example.com", "password": "x"})
+    ).status_code == 429
+    assert (await client.post("/api/v1/auth/refresh")).status_code == 200

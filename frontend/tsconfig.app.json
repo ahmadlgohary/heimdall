@@ -25,5 +25,5 @@
     "noFallthroughCasesInSwitch": true
   },
   "include": ["src", "tests"],
-  "exclude": ["tests/e2e"]
+  "exclude": ["tests/e2e", "tests/e2e-stack"]
 }

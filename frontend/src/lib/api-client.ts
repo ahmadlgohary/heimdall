@@ -79,19 +79,38 @@ function defaultMessage(status: number) {
 
 let refreshInFlight: Promise<string | null> | null = null
 
-/** Rotate the refresh cookie and get a fresh access token. Deduplicated. */
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
+
+/**
+ * Rotate the refresh cookie and get a fresh access token. Deduplicated.
+ *
+ * Only a 401 means the session is over. A rate limit (429), a server error or a
+ * network blip is retried once, so a temporary problem doesn't sign the user out.
+ */
 export function refreshAccessToken(): Promise<string | null> {
   refreshInFlight ??= (async () => {
     try {
-      const res = await fetch(buildUrl('/auth/refresh'), {
-        method: 'POST',
-        credentials: 'include',
-      })
-      if (!res.ok) return null
-      const data = (await res.json()) as { access_token: string }
-      tokenStore.set(data.access_token)
-      return data.access_token
-    } catch {
+      for (let attempt = 0; attempt < 2; attempt++) {
+        let res: Response
+        try {
+          res = await fetch(buildUrl('/auth/refresh'), { method: 'POST', credentials: 'include' })
+        } catch {
+          if (attempt === 0) {
+            await sleep(1000)
+            continue
+          }
+          return null
+        }
+        if (res.ok) {
+          const data = (await res.json()) as { access_token: string }
+          tokenStore.set(data.access_token)
+          return data.access_token
+        }
+        const temporary = res.status === 429 || res.status >= 500
+        if (!temporary || attempt === 1) return null
+        const retryAfter = Number(res.headers.get('retry-after'))
+        await sleep(Number.isFinite(retryAfter) && retryAfter > 0 ? Math.min(retryAfter, 5) * 1000 : 1000)
+      }
       return null
     } finally {
       queueMicrotask(() => (refreshInFlight = null))

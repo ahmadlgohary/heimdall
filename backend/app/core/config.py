@@ -99,7 +99,11 @@ class Settings(BaseSettings):
     demo_receiver_enabled: bool = False
     demo_receiver_url: str = ""
 
+    # Login/register/password: slows down guessing.
     auth_rate_limit_per_minute: int = 20
+    # Session refresh runs on every page load and its token can't be guessed, so it gets
+    # its own, looser budget: users behind one NAT IP shouldn't be signed out by reloads.
+    refresh_rate_limit_per_minute: int = 120
     ingest_rate_limit_per_minute: int = 600
 
     @field_validator("database_url")

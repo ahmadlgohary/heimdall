@@ -2,7 +2,13 @@ from typing import Annotated
 
 from fastapi import APIRouter, Cookie, Depends, Response, status
 
-from app.api.dependencies import CurrentUser, SessionDep, SettingsDep, auth_rate_limit
+from app.api.dependencies import (
+    CurrentUser,
+    SessionDep,
+    SettingsDep,
+    auth_rate_limit,
+    refresh_rate_limit,
+)
 from app.core.config import Settings
 from app.core.exceptions import Conflict, Forbidden, Unauthorized
 from app.schemas.auth import (
@@ -78,7 +84,7 @@ async def login(
     return _auth_response(session, settings)
 
 
-@router.post("/refresh", dependencies=[Depends(auth_rate_limit)])
+@router.post("/refresh", dependencies=[Depends(refresh_rate_limit)])
 async def refresh(
     response: Response, db: SessionDep, settings: SettingsDep, token: RefreshCookie = None
 ) -> TokenResponse:

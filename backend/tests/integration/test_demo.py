@@ -185,3 +185,25 @@ async def test_live_demo_event_is_delivered_to_the_built_in_receiver(
         await httpx.AsyncClient(transport=httpx.ASGITransport(app=app)).get("http://x/demo-receiver/requests")
     ).json()
     assert any(r["event_id"] == str(live.id) and r["signature_present"] for r in received)
+
+
+async def test_receiver_returns_full_deliveries_by_event_id(demo_client):
+    client, _ = demo_client
+    headers = {
+        "X-Webhook-ID": "evt-123",
+        "X-Webhook-Attempt": "1",
+        "X-Webhook-Timestamp": "1794312000",
+        "X-Webhook-Signature": "v1=abc",
+    }
+    await client.post("/demo-receiver/hooks/ok", content=b'{"id":"evt-123"}', headers=headers)
+    (got,) = (await client.get("/demo-receiver/requests/evt-123")).json()
+    assert (
+        got["body"] == '{"id":"evt-123"}'
+        and got["signature"] == "v1=abc"
+        and got["timestamp"] == "1794312000"
+    )
+    assert (await client.get("/demo-receiver/requests/unknown")).status_code == 404
+    # the shared list never carries bodies or signatures
+    assert all(
+        "body" not in r and "signature" not in r for r in (await client.get("/demo-receiver/requests")).json()
+    )

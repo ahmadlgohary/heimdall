@@ -63,3 +63,7 @@ def client_ip(request: Request) -> str:
 
 def auth_rate_limit(request: Request, settings: SettingsDep) -> None:
     limiter.check(f"auth:{client_ip(request)}", settings.auth_rate_limit_per_minute)
+
+
+def refresh_rate_limit(request: Request, settings: SettingsDep) -> None:
+    limiter.check(f"refresh:{client_ip(request)}", settings.refresh_rate_limit_per_minute)

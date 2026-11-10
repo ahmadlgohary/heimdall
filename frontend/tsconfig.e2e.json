@@ -18,6 +18,8 @@
   },
   "include": [
     "tests/e2e",
-    "playwright.config.ts"
+    "tests/e2e-stack",
+    "playwright.config.ts",
+    "playwright.stack.config.ts"
   ]
 }

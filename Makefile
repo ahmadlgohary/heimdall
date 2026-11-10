@@ -90,6 +90,10 @@ test-frontend: ## Frontend unit/component tests (Vitest)
 e2e: ## Frontend end-to-end tests (Playwright, against the mock API)
 	cd frontend && npm run test:e2e
 
+.PHONY: e2e-stack
+e2e-stack: ## The spec's end-to-end scenarios (Playwright) against the running stack
+	cd frontend && npm run test:e2e:stack
+
 .PHONY: smoke
 smoke: ## End-to-end check of the running stack (ingest -> deliver)
 	./infrastructure/scripts/smoke-test.sh
@@ -119,7 +123,7 @@ fmt: ## Auto-format the backend
 	cd backend && uv run ruff format . && uv run ruff check --fix .
 
 .PHONY: check
-check: lint test test-frontend test-worker smoke ## Everything CI checks, against the running stack
+check: lint test test-frontend test-worker smoke e2e-stack ## Everything CI checks, against the running stack
 
 ## ---------- production ----------
 

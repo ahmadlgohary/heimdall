@@ -15,20 +15,27 @@ ALLOW_PRIVATE_DESTINATIONS=true in development):
   switch     returns whatever POST /control/switch set (default 500)
 
 If MOCK_RECEIVER_SECRET is set, signatures are verified and failures return 401.
-GET /requests lists the most recent deliveries received.
+GET /requests lists the most recent deliveries received (metadata only).
+GET /requests/{event_id} returns that event's deliveries with body and signature headers.
 """
 
 import asyncio
 import os
-from collections import deque
+from collections import OrderedDict, deque
 from datetime import UTC, datetime
 
-from fastapi import APIRouter, FastAPI, Request, Response
+from fastapi import APIRouter, FastAPI, HTTPException, Request, Response
 
 from app.utils.signatures import verify_signature
 
 router = APIRouter(tags=["test receiver"])
 received: deque[dict] = deque(maxlen=100)
+# Full deliveries (body + signature headers) per event, so a test that knows the
+# endpoint's signing secret can verify the signature end to end. Only reachable by
+# event ID, which can't be guessed, so the shared list above stays metadata-only.
+by_event: OrderedDict[str, list[dict]] = OrderedDict()
+MAX_EVENTS = 500
+MAX_BODY = 64 * 1024
 state = {"switch": 500}
 SECRET = os.environ.get("MOCK_RECEIVER_SECRET", "")
 
@@ -54,6 +61,21 @@ async def hook(behaviour: str, request: Request) -> Response:
             "bytes": len(body),
         }
     )
+    event_id = headers.get("x-webhook-id")
+    if event_id:
+        by_event.setdefault(event_id, []).append(
+            {
+                "attempt": headers.get("x-webhook-attempt"),
+                "timestamp": headers.get("x-webhook-timestamp"),
+                "signature": headers.get("x-webhook-signature"),
+                "delivery_id": headers.get("x-webhook-delivery"),
+                "body": body[:MAX_BODY].decode("utf-8", errors="replace"),
+                "received_at": datetime.now(UTC).isoformat(),
+            }
+        )
+        by_event.move_to_end(event_id)
+        while len(by_event) > MAX_EVENTS:
+            by_event.popitem(last=False)
     if signature_ok is False:
         return Response('{"error":"bad signature"}', status_code=401, media_type="application/json")
 
@@ -91,6 +113,14 @@ async def set_switch(status: int = 200) -> dict:
 @router.get("/requests")
 async def requests() -> list[dict]:
     return list(received)
+
+
+@router.get("/requests/{event_id}")
+async def requests_for_event(event_id: str) -> list[dict]:
+    """Every delivery of one event, with the exact body and signature headers."""
+    if event_id not in by_event:
+        raise HTTPException(status_code=404, detail="No deliveries received for this event.")
+    return by_event[event_id]
 
 
 app = FastAPI(title="Heimdall mock receiver")

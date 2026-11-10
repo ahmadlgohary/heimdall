@@ -25,6 +25,7 @@ as such, so it can't be mistaken for live processing.
 | `npm run typecheck` / `npm run lint` | `tsc -b` / ESLint |
 | `npm test` | Vitest + React Testing Library |
 | `npm run test:e2e` | Playwright at desktop, tablet and 375px mobile sizes, against the mock API |
+| `npm run test:e2e:stack` | The spec's three end-to-end scenarios (§11.5) against the running docker compose stack: `make up && make e2e-stack` |
 
 Playwright needs its browser once: `npx playwright install chromium`. To run
 the same E2E specs against a deployed stack, set `PLAYWRIGHT_BASE_URL`.
