@@ -55,10 +55,10 @@ npx wrangler secret put WORKER_SHARED_SECRET --env production
 
 ```bash
 npm ci
-cp .dev.vars.example .dev.vars        # put the API's WORKER_SHARED_SECRET here
-npm run dev                           # http://localhost:8787, forwards to API_ORIGIN
-# or from the repo root, in front of the docker compose API:
+# from the repo root: writes .dev.vars from WORKER_SHARED_SECRET in the root .env,
+# then runs the worker on http://localhost:8787 in front of the local API
 make worker-dev
+# or by hand: cp .dev.vars.example .dev.vars (same secret as the API), then npm run dev
 ```
 
 ```bash

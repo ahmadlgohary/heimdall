@@ -38,9 +38,13 @@ runs no dev tools, and publishes only the frontend.
 You need PostgreSQL and RabbitMQ running (the repo-level Docker Compose will
 provide both).
 
+Configuration lives in **one file, the repository root's `.env`**, shared with
+docker compose. The backend finds it from any working directory (`make env` at
+the root creates it from `.env.example` with fresh secrets).
+
 ```bash
 uv sync
-cp .env.example .env            # set JWT_SECRET; STORAGE_BACKEND=local needs no S3
+(cd .. && make env)             # once: creates ../.env; STORAGE_BACKEND=local needs no S3
 uv run alembic upgrade head
 uv run uvicorn app.main:app --reload --port 8000
 uv run python -m app.workers.outbox_worker      # second terminal
@@ -108,8 +112,8 @@ automatically.
   hosts are detected by name, and asyncpg's prepared-statement cache is
   switched off for them, because PgBouncer in transaction mode can't keep
   prepared statements. Force this either way with `DATABASE_USES_POOLER`.
-- **Migrations:** put the direct (non-pooled) host in `DATABASE_MIGRATION_URL`,
-  which `alembic upgrade head` uses when it's set.
+- **Migrations:** `alembic upgrade head` uses `DATABASE_URL` too. That works
+  through the pooled host, as the session's migrations to Neon did.
 
 ## Tests
 

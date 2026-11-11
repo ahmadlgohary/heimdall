@@ -3,6 +3,7 @@
 import base64
 import hashlib
 from functools import lru_cache
+from pathlib import Path
 from typing import Literal
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
@@ -10,12 +11,14 @@ from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 INSECURE_DEFAULT = "change-me-in-production"
+# The repository's single .env (heimdall/.env), found no matter where the process starts.
+# In containers it doesn't exist and settings come from the environment instead.
+ROOT_ENV_FILE = Path(__file__).resolve().parents[3] / ".env"
 
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
-        # Later files win: backend/.env overrides the repo-root .env (used by docker compose).
-        env_file=("../.env", ".env"),
+        env_file=ROOT_ENV_FILE,
         env_file_encoding="utf-8",
         # A blank `DATABASE_URL=` (e.g. a production-only placeholder) must not wipe out a value.
         env_ignore_empty=True,
@@ -30,8 +33,6 @@ class Settings(BaseSettings):
 
     database_url: str = "postgresql+asyncpg://heimdall:heimdall@localhost:5432/heimdall"
     database_pool_size: int = 10
-    # Optional direct (non-pooled) URL for Alembic. Neon recommends running migrations
-    # against the direct host rather than the "-pooler" one. Falls back to DATABASE_URL.
     rabbitmq_url: str = "amqp://guest:guest@localhost:5672/"
 
     jwt_secret: str = INSECURE_DEFAULT
@@ -39,7 +40,8 @@ class Settings(BaseSettings):
     jwt_access_token_expire_minutes: int = 15
     refresh_token_expire_days: int = 14
 
-    # Fernet key used to encrypt endpoint signing secrets at rest.
+    # Fernet key(s) used to encrypt endpoint signing secrets at rest. Comma-separate several
+    # keys to rotate: the first encrypts, all decrypt.
     encryption_key: str = ""
 
     # Event payload storage: "s3" in production; "local" (disk) or "memory" for dev/tests.
@@ -164,11 +166,14 @@ class Settings(BaseSettings):
         return [o.strip().rstrip("/") for o in self.frontend_url.split(",") if o.strip()]
 
     @property
-    def fernet_key(self) -> bytes:
-        if self.encryption_key:
-            return self.encryption_key.encode()
+    def fernet_key(self) -> list[bytes]:
+        """ENCRYPTION_KEY may list several comma-separated keys for rotation: the first
+        encrypts new secrets, all of them decrypt existing ones."""
+        keys = [k.strip().encode() for k in self.encryption_key.split(",") if k.strip()]
+        if keys:
+            return keys
         # Development convenience: derive a stable key from the JWT secret.
-        return base64.urlsafe_b64encode(hashlib.sha256(self.jwt_secret.encode()).digest())
+        return [base64.urlsafe_b64encode(hashlib.sha256(self.jwt_secret.encode()).digest())]
 
 
 # libpq options asyncpg doesn't understand. sslmode is translated to asyncpg's `ssl`;

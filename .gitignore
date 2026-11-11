@@ -1,5 +1,7 @@
-# secrets
+# secrets: .env and any copy of it (.env.old, .env.backup-*), but not the template
 .env
+.env.*
+!.env.example
 *.env.local
 
 # OS / editors

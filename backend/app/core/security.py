@@ -4,11 +4,12 @@ import hashlib
 import hmac
 import secrets
 import uuid
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
 import jwt
-from cryptography.fernet import Fernet, InvalidToken
+from cryptography.fernet import Fernet, InvalidToken, MultiFernet
 from pwdlib import PasswordHash
 from pwdlib.hashers.argon2 import Argon2Hasher
 
@@ -101,10 +102,16 @@ def generate_signing_secret() -> str:
 
 
 class SecretBox:
-    """Symmetric encryption for secrets stored at rest (endpoint signing secrets)."""
+    """Symmetric encryption for secrets stored at rest (endpoint signing secrets).
 
-    def __init__(self, key: bytes) -> None:
-        self._fernet = Fernet(key)
+    Accepts several keys for rotation: the first encrypts, every key can decrypt.
+    """
+
+    def __init__(self, keys: bytes | Sequence[bytes]) -> None:
+        key_list = [keys] if isinstance(keys, bytes) else list(keys)
+        if not key_list:
+            raise ValueError("at least one encryption key is required")
+        self._fernet = MultiFernet([Fernet(k) for k in key_list])
 
     def encrypt(self, plaintext: str) -> str:
         return self._fernet.encrypt(plaintext.encode()).decode()

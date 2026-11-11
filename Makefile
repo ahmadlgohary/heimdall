@@ -103,7 +103,9 @@ test-worker: ## Edge worker tests (Vitest inside the Workers runtime)
 	cd serverless/ingestion-worker && npm test
 
 .PHONY: worker-dev
-worker-dev: ## Run the edge worker locally on :8787 in front of the local API
+worker-dev: .env ## Run the edge worker locally on :8787 in front of the local API
+	@grep -E '^WORKER_SHARED_SECRET=.' .env > serverless/ingestion-worker/.dev.vars || \
+	  (echo "Set WORKER_SHARED_SECRET in .env first" && exit 1)
 	cd serverless/ingestion-worker && npx wrangler dev --port 8787 --var API_ORIGIN:http://localhost:$(call port,API_PORT,8000)
 
 .PHONY: worker-deploy

@@ -85,3 +85,16 @@ def test_production_requires_real_secrets():
         Settings(
             app_env="production", jwt_secret="k" * 40, encryption_key="x", allow_private_destinations=True
         )
+
+
+def test_secret_box_supports_key_rotation():
+    from cryptography.fernet import Fernet
+
+    old, new = Fernet.generate_key(), Fernet.generate_key()
+    legacy = SecretBox(old).encrypt("whsec_old")
+    rotated = SecretBox(Settings(encryption_key=f"{new.decode()}, {old.decode()}").fernet_key)
+    assert rotated.decrypt(legacy) == "whsec_old"  # old data still readable
+    fresh = rotated.encrypt("whsec_new")
+    assert SecretBox(new).decrypt(fresh) == "whsec_new"  # new data uses the first key
+    with pytest.raises(ValueError):
+        SecretBox(old).decrypt(fresh)
