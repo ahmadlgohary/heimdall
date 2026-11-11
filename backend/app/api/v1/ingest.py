@@ -7,11 +7,19 @@ from typing import Annotated
 from fastapi import APIRouter, Header, Request, Response, status
 from pydantic import ValidationError
 
-from app.api.dependencies import SessionDep, SettingsDep, StorageDep
+from app.api.dependencies import DEMO_READ_ONLY_MESSAGE, SessionDep, SettingsDep, StorageDep
 from app.core.config import Settings
-from app.core.exceptions import BadRequest, NotFound, PayloadTooLarge, Unauthorized, ValidationFailed
+from app.core.exceptions import (
+    BadRequest,
+    Forbidden,
+    NotFound,
+    PayloadTooLarge,
+    Unauthorized,
+    ValidationFailed,
+)
 from app.core.rate_limit import limiter
 from app.core.security import constant_time_equals
+from app.db.models import User
 from app.repositories.endpoint_repository import EndpointRepository
 from app.schemas.event import IngestRequest, IngestResponse
 from app.services.api_key_service import ApiKeyService
@@ -63,6 +71,9 @@ async def _ingest(
 ) -> IngestResponse:
     raw = await _read_body(request, settings.max_payload_bytes)
     key = await ApiKeyService(db).authenticate(authorization)
+    owner = await db.get(User, key.user_id)
+    if owner is not None and settings.is_demo_email(owner.email):
+        raise Forbidden(DEMO_READ_ONLY_MESSAGE, code="DEMO_READ_ONLY")
     limiter.check(f"ingest:{key.id}", settings.ingest_rate_limit_per_minute)
     body = _parse(raw, request.headers.get("content-type"))
 

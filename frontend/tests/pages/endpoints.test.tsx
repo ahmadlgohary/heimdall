@@ -1,7 +1,7 @@
 import { screen, waitFor, within } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 import { db } from '@/mocks/db'
-import { renderApp, signInAsDemo } from '../utils'
+import { renderApp, signInAsSeededOwner } from '../utils'
 
 async function desktopTable() {
   const table = await screen.findByRole('table')
@@ -11,7 +11,7 @@ async function desktopTable() {
 
 describe('endpoints', () => {
   it('lists the user’s endpoints', async () => {
-    signInAsDemo()
+    signInAsSeededOwner()
     renderApp('/endpoints')
     const table = await desktopTable()
     for (const name of ['Production orders', 'Billing service', 'Slack relay', 'Legacy CRM']) {
@@ -20,7 +20,7 @@ describe('endpoints', () => {
   })
 
   it('opens the create modal and creates a valid endpoint, revealing the secret once', async () => {
-    signInAsDemo()
+    signInAsSeededOwner()
     const { user } = renderApp('/endpoints')
     await desktopTable()
     await user.click(screen.getAllByRole('button', { name: 'Add endpoint' })[0])
@@ -35,7 +35,7 @@ describe('endpoints', () => {
   })
 
   it('shows the API’s error for a private destination', async () => {
-    signInAsDemo()
+    signInAsSeededOwner()
     const { user } = renderApp('/endpoints?new=1')
     const dialog = await screen.findByRole('dialog', { name: 'Add endpoint' })
     await user.type(within(dialog).getByLabelText('Name'), 'Local')
@@ -45,7 +45,7 @@ describe('endpoints', () => {
   })
 
   it('surfaces server-side URL validation on the field', async () => {
-    signInAsDemo()
+    signInAsSeededOwner()
     const { user } = renderApp('/endpoints?new=1')
     const dialog = await screen.findByRole('dialog', { name: 'Add endpoint' })
     await user.type(within(dialog).getByLabelText('Name'), 'Plain http')
@@ -55,7 +55,7 @@ describe('endpoints', () => {
   })
 
   it('disables an endpoint', async () => {
-    signInAsDemo()
+    signInAsSeededOwner()
     const { user } = renderApp('/endpoints')
     const table = await desktopTable()
     const toggle = within(table).getByRole('switch', { name: 'Disable Production orders' })
@@ -66,7 +66,7 @@ describe('endpoints', () => {
   })
 
   it('deletes an endpoint only after confirmation', async () => {
-    signInAsDemo()
+    signInAsSeededOwner()
     const { user } = renderApp('/endpoints')
     const table = await desktopTable()
     await user.click(within(table).getByRole('button', { name: 'Actions for Slack relay' }))
@@ -81,7 +81,7 @@ describe('endpoints', () => {
   })
 
   it('rotates a signing secret after confirmation', async () => {
-    signInAsDemo()
+    signInAsSeededOwner()
     const before = db.endpoints.find((e) => e.name === 'Billing service')!.signing_secret
     const { user } = renderApp('/endpoints')
     const table = await desktopTable()

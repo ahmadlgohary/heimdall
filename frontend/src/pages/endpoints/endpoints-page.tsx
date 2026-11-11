@@ -12,6 +12,7 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
@@ -19,6 +20,8 @@ import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Switch } from '@/components/ui/switch'
 import { useEndpoints, useUpdateEndpoint } from '@/hooks/use-endpoints'
+import { READ_ONLY_HINT, useReadOnly } from '@/hooks/use-read-only'
+import { ReadOnlyNote } from '@/components/common/read-only-note'
 import { cn, formatNumber, formatPercent, formatRelative } from '@/lib/utils'
 import type { Endpoint } from '@/types/api'
 
@@ -29,6 +32,7 @@ function SuccessRate({ rate }: { rate: number | null | undefined }) {
 }
 
 function EndpointMenu({ endpoint, onAction }: { endpoint: Endpoint; onAction: (a: EndpointAction, e: Endpoint) => void }) {
+  const readOnly = useReadOnly()
   const test = useSendTestWithToast()
   return (
     <DropdownMenu>
@@ -38,17 +42,18 @@ function EndpointMenu({ endpoint, onAction }: { endpoint: Endpoint; onAction: (a
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent>
-        <DropdownMenuItem disabled={!endpoint.enabled} onSelect={() => test.run(endpoint)}>
+        {readOnly && <DropdownMenuLabel>{READ_ONLY_HINT}</DropdownMenuLabel>}
+        <DropdownMenuItem disabled={readOnly || !endpoint.enabled} onSelect={() => test.run(endpoint)}>
           <Send /> Send test event
         </DropdownMenuItem>
-        <DropdownMenuItem onSelect={() => onAction('edit', endpoint)}>
+        <DropdownMenuItem disabled={readOnly} onSelect={() => onAction('edit', endpoint)}>
           <Pencil /> Edit
         </DropdownMenuItem>
-        <DropdownMenuItem onSelect={() => onAction('rotate', endpoint)}>
+        <DropdownMenuItem disabled={readOnly} onSelect={() => onAction('rotate', endpoint)}>
           <RefreshCcw /> Rotate signing secret
         </DropdownMenuItem>
         <DropdownMenuSeparator />
-        <DropdownMenuItem tone="danger" onSelect={() => onAction('delete', endpoint)}>
+        <DropdownMenuItem tone="danger" disabled={readOnly} onSelect={() => onAction('delete', endpoint)}>
           <Trash2 /> Delete
         </DropdownMenuItem>
       </DropdownMenuContent>
@@ -58,9 +63,12 @@ function EndpointMenu({ endpoint, onAction }: { endpoint: Endpoint; onAction: (a
 
 function EnabledSwitch({ endpoint }: { endpoint: Endpoint }) {
   const update = useUpdateEndpoint()
+  const readOnly = useReadOnly()
   return (
     <Switch
       checked={endpoint.enabled}
+      disabled={readOnly}
+      title={readOnly ? READ_ONLY_HINT : undefined}
       onCheckedChange={(enabled) => update.mutate({ id: endpoint.id, body: { enabled } })}
       aria-label={`${endpoint.enabled ? 'Disable' : 'Enable'} ${endpoint.name}`}
     />
@@ -73,7 +81,8 @@ export default function EndpointsPage() {
   const [query, setQuery] = useState('')
   const [action, setAction] = useState<EndpointAction>(null)
   const [target, setTarget] = useState<Endpoint | null>(null)
-  const creating = params.get('new') === '1'
+  const readOnly = useReadOnly()
+  const creating = params.get('new') === '1' && !readOnly
 
   const setCreating = (open: boolean) => {
     const next = new URLSearchParams(params)
@@ -101,11 +110,13 @@ export default function EndpointsPage() {
         title="Endpoints"
         description="URLs that receive your events. Each one has its own signing secret."
         actions={
-          <Button variant="primary" onClick={() => setCreating(true)}>
+          <Button variant="primary" onClick={() => setCreating(true)} disabled={readOnly} title={readOnly ? READ_ONLY_HINT : undefined}>
             <Plus /> Add endpoint
           </Button>
         }
       />
+
+      <ReadOnlyNote />
 
       <Panel
         title={total ? `${total} endpoint${total === 1 ? '' : 's'}` : 'Endpoints'}

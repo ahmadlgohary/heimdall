@@ -106,7 +106,8 @@ function DemoPanel({
         Try the demo
       </h2>
       <p className="mt-1 text-sm text-muted">
-        A shared account with sample history and a built-in test receiver, so the events you send are really delivered.
+        A read-only account with sample history. Explore endpoints, events, deliveries and analytics; nothing you do is
+        saved.
       </p>
       <dl className="mt-3 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-sm">
         <dt className="text-muted">Email</dt>

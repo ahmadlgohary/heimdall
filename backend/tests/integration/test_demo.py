@@ -130,7 +130,7 @@ async def test_demo_login_and_guards(demo_client, demo_settings, session_factory
         json={"current_password": demo_settings.demo_password, "new_password": "Hijacked-Passw0rd"},
         headers=headers,
     )
-    assert change.status_code == 403 and change.json()["error"]["code"] == "DEMO_ACCOUNT"
+    assert change.status_code == 403 and change.json()["error"]["code"] == "DEMO_READ_ONLY"
 
     taken = await client.post(
         "/api/v1/auth/register",
@@ -207,3 +207,156 @@ async def test_receiver_returns_full_deliveries_by_event_id(demo_client):
     assert all(
         "body" not in r and "signature" not in r for r in (await client.get("/demo-receiver/requests")).json()
     )
+
+
+# ---------- the demo account is read-only ----------
+
+TABLES = (
+    "users",
+    "refresh_tokens",
+    "endpoints",
+    "api_keys",
+    "events",
+    "deliveries",
+    "delivery_attempts",
+    "outbox_messages",
+    "worker_heartbeats",
+)
+
+
+async def fingerprint(db) -> dict[str, tuple[int, str | None]]:
+    """Row count and a hash of every row's contents, per table."""
+    from sqlalchemy import text
+
+    out = {}
+    for table in TABLES:
+        row = (
+            await db.execute(
+                text(f"SELECT count(*), md5(string_agg(t::text, '|' ORDER BY t::text)) FROM {table} t")  # noqa: S608 (fixed table list)
+            )
+        ).one()
+        out[table] = (row[0], row[1])
+    return out
+
+
+async def test_a_full_demo_session_writes_nothing(demo_client, demo_settings, session_factory, storage, db):
+    from app.core.security import generate_api_key
+    from app.db.models import ApiKey
+
+    client, _ = demo_client
+    await run_seed(demo_settings, session_factory, storage, live=1)
+    user = await db.scalar(select(User).where(User.email == demo_settings.demo_email))
+    endpoint = await db.scalar(
+        select(Endpoint).where(Endpoint.user_id == user.id, Endpoint.enabled.is_(True))
+    )
+    event = await db.scalar(select(Event).join(Endpoint).where(Endpoint.user_id == user.id))
+    delivery = await db.scalar(select(Delivery).where(Delivery.event_id == event.id))
+    # a demo API key whose raw value we know, to try ingesting with it
+    raw_key = generate_api_key()
+    key = ApiKey(user_id=user.id, name="known", key_prefix=raw_key.prefix, key_hash=raw_key.hash)
+    db.add(key)
+    await db.commit()
+    objects_before = dict(storage.objects)
+    before = await fingerprint(db)
+
+    # sign in, refresh, browse everything
+    login = await client.post(
+        "/api/v1/auth/login",
+        json={"email": demo_settings.demo_email, "password": demo_settings.demo_password},
+    )
+    assert login.status_code == 200
+    h = {"Authorization": f"Bearer {login.json()['access_token']}"}
+    assert (await client.post("/api/v1/auth/refresh")).status_code == 200
+    for path in (
+        "/api/v1/auth/me",
+        "/api/v1/dashboard/stats?range=24h",
+        "/api/v1/dashboard/activity",
+        "/api/v1/analytics/overview?range=30d",
+        "/api/v1/endpoints",
+        f"/api/v1/endpoints/{endpoint.id}",
+        "/api/v1/events?status=failed",
+        f"/api/v1/events/{event.id}",
+        f"/api/v1/events/{event.id}/payload",
+        f"/api/v1/events/{event.id}/deliveries",
+        f"/api/v1/deliveries/{delivery.id}",
+        f"/api/v1/deliveries/{delivery.id}/attempts",
+        "/api/v1/api-keys",
+    ):
+        assert (await client.get(path, headers=h)).status_code == 200, path
+
+    # every way to change something is refused
+    attempts = [
+        ("POST", "/api/v1/endpoints", {"name": "x", "url": "https://hooks.example.com/x"}),
+        ("PATCH", f"/api/v1/endpoints/{endpoint.id}", {"enabled": False}),
+        ("DELETE", f"/api/v1/endpoints/{endpoint.id}", None),
+        ("POST", f"/api/v1/endpoints/{endpoint.id}/rotate-secret", None),
+        ("POST", f"/api/v1/endpoints/{endpoint.id}/test", None),
+        ("POST", f"/api/v1/events/{event.id}/replay", None),
+        ("POST", "/api/v1/api-keys", {"name": "x"}),
+        ("DELETE", f"/api/v1/api-keys/{key.id}", None),
+        (
+            "POST",
+            "/api/v1/auth/change-password",
+            {"current_password": "x", "new_password": "Another-Passw0rd"},
+        ),
+    ]
+    for method, path, body in attempts:
+        res = await client.request(method, path, json=body, headers=h)
+        assert res.status_code == 403, (method, path, res.text)
+        assert res.json()["error"]["code"] == "DEMO_READ_ONLY"
+    ingest = await client.post(
+        f"/api/v1/ingest/{endpoint.id}",
+        json={"event_type": "order.created", "data": {}},
+        headers={"Authorization": f"Bearer {raw_key.raw}"},
+    )
+    assert ingest.status_code == 403 and ingest.json()["error"]["code"] == "DEMO_READ_ONLY"
+    assert (await client.post("/api/v1/auth/logout", headers=h)).status_code == 204
+
+    db.expire_all()
+    assert await fingerprint(db) == before  # not a single row added, changed or removed
+    assert storage.objects == objects_before  # and nothing stored
+
+
+async def test_demo_sessions_are_stateless_and_still_secure(
+    demo_client, demo_settings, session_factory, storage, db
+):
+    from app.db.models import RefreshToken
+
+    client, _ = demo_client
+    await run_seed(demo_settings, session_factory, storage, live=0)
+    login = await client.post(
+        "/api/v1/auth/login",
+        json={"email": demo_settings.demo_email, "password": demo_settings.demo_password},
+    )
+    assert login.status_code == 200
+    assert await count(db, select(RefreshToken)) == 0  # no token stored
+    # the refresh cookie works, and keeps working, without a database row
+    for _ in range(3):
+        res = await client.post("/api/v1/auth/refresh")
+        assert res.status_code == 200 and res.json()["access_token"]
+    # a forged or foreign token is rejected
+    client.cookies.set("whh_refresh", "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ4In0.forged", path="/api/v1/auth")
+    assert (await client.post("/api/v1/auth/refresh")).status_code == 401
+    # regular accounts still get rotating, stored refresh tokens
+    other = await client.post(
+        "/api/v1/auth/register", json={"email": "real@example.com", "password": "Real-Passw0rd1"}
+    )
+    assert other.status_code == 201
+    assert await count(db, select(RefreshToken)) == 1
+
+
+async def test_demo_session_ends_when_the_demo_is_switched_off(
+    demo_client, demo_settings, settings, session_factory, storage, db
+):
+    client, _ = demo_client
+    await run_seed(demo_settings, session_factory, storage, live=0)
+    await client.post(
+        "/api/v1/auth/login",
+        json={"email": demo_settings.demo_email, "password": demo_settings.demo_password},
+    )
+    cookie = client.cookies.get("whh_refresh")
+    off = create_app(settings, storage=storage)  # DEMO_ENABLED=false
+    off.state.session_factory = session_factory
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=off), base_url="http://test") as c:
+        c.cookies.set("whh_refresh", cookie, path="/api/v1/auth")
+        assert (await c.post("/api/v1/auth/refresh")).status_code == 401

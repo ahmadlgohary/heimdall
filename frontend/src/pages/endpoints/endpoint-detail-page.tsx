@@ -13,9 +13,13 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Switch } from '@/components/ui/switch'
 import { useEndpoint, useUpdateEndpoint } from '@/hooks/use-endpoints'
 import { useEvents } from '@/hooks/use-events'
+import { READ_ONLY_HINT, useReadOnly } from '@/hooks/use-read-only'
+import { ReadOnlyNote } from '@/components/common/read-only-note'
 import { formatDateTime, formatNumber, formatPercent, formatRelative, shortId } from '@/lib/utils'
 
 export default function EndpointDetailPage() {
+  const readOnly = useReadOnly()
+  const lock = readOnly ? { disabled: true, title: READ_ONLY_HINT } : {}
   const { id = '' } = useParams()
   const navigate = useNavigate()
   const { data: endpoint, isPending, isError, error, refetch } = useEndpoint(id)
@@ -63,24 +67,33 @@ export default function EndpointDetailPage() {
                 checked={endpoint.enabled}
                 onCheckedChange={(enabled) => update.mutate({ id, body: { enabled } })}
                 aria-label="Deliver events"
+                {...lock}
               />
               Deliver events
             </label>
-            <Button variant="primary" disabled={!endpoint.enabled} loading={test.pending} onClick={() => test.run(endpoint)}>
+            <Button
+              variant="primary"
+              disabled={readOnly || !endpoint.enabled}
+              title={readOnly ? READ_ONLY_HINT : undefined}
+              loading={test.pending}
+              onClick={() => test.run(endpoint)}
+            >
               <Send /> Send test event
             </Button>
-            <Button variant="secondary" onClick={() => setAction('edit')}>
+            <Button variant="secondary" onClick={() => setAction('edit')} {...lock}>
               <Pencil /> Edit
             </Button>
-            <Button variant="secondary" onClick={() => setAction('rotate')}>
+            <Button variant="secondary" onClick={() => setAction('rotate')} {...lock}>
               <RefreshCcw /> Rotate secret
             </Button>
-            <Button variant="danger-ghost" size="icon" aria-label="Delete endpoint" onClick={() => setAction('delete')}>
+            <Button variant="danger-ghost" size="icon" aria-label="Delete endpoint" onClick={() => setAction('delete')} {...lock}>
               <Trash2 />
             </Button>
           </div>
         </div>
       )}
+
+      <ReadOnlyNote />
 
       <div className="grid gap-5 xl:grid-cols-3">
         <div className="grid min-w-0 content-start gap-5 xl:col-span-2">

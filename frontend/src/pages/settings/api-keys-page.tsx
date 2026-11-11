@@ -13,6 +13,8 @@ import { Field, fieldA11y } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useApiKeys, useCreateApiKey, useRevokeApiKey } from '@/hooks/use-api-keys'
+import { READ_ONLY_HINT, useReadOnly } from '@/hooks/use-read-only'
+import { ReadOnlyNote } from '@/components/common/read-only-note'
 import { API_BASE, errorMessage } from '@/lib/api-client'
 import { cn, formatDateTime, formatRelative } from '@/lib/utils'
 import { apiKeySchema } from '@/schemas/endpoint'
@@ -93,6 +95,8 @@ const CURL = (base: string) => `curl -X POST ${base}/ingest/<endpoint_id> \\
   -d '{"event_type":"order.created","data":{"order_id":"ORD-1001","amount":129.99}}'`
 
 export default function ApiKeysPage() {
+  const readOnly = useReadOnly()
+  const lock = readOnly ? { disabled: true, title: READ_ONLY_HINT } : {}
   const { data, isPending, isError, error, refetch } = useApiKeys()
   const revoke = useRevokeApiKey()
   const [creating, setCreating] = useState(false)
@@ -107,11 +111,13 @@ export default function ApiKeysPage() {
         title="API keys"
         description="Keys let your application send events to Heimdall. Keep them on your server."
         actions={
-          <Button variant="primary" onClick={() => setCreating(true)}>
+          <Button variant="primary" onClick={() => setCreating(true)} {...lock}>
             <Plus /> Create key
           </Button>
         }
       />
+
+      <ReadOnlyNote />
 
       <div className="grid gap-5">
         <Panel>
@@ -128,7 +134,7 @@ export default function ApiKeysPage() {
               title="No API keys yet"
               description="Create a key to start sending events from your application."
               action={
-                <Button variant="primary" onClick={() => setCreating(true)}>
+                <Button variant="primary" onClick={() => setCreating(true)} {...lock}>
                   <Plus /> Create key
                 </Button>
               }
@@ -162,7 +168,13 @@ export default function ApiKeysPage() {
                       </div>
                     </dl>
                     {!revoked ? (
-                      <Button variant="danger-ghost" size="sm" onClick={() => setRevoking(k)} aria-label={`Revoke ${k.name}`}>
+                      <Button
+                        variant="danger-ghost"
+                        size="sm"
+                        onClick={() => setRevoking(k)}
+                        aria-label={`Revoke ${k.name}`}
+                        {...lock}
+                      >
                         <Trash2 /> Revoke
                       </Button>
                     ) : (

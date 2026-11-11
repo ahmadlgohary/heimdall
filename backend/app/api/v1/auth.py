@@ -6,11 +6,12 @@ from app.api.dependencies import (
     CurrentUser,
     SessionDep,
     SettingsDep,
+    WritableUser,
     auth_rate_limit,
     refresh_rate_limit,
 )
 from app.core.config import Settings
-from app.core.exceptions import Conflict, Forbidden, Unauthorized
+from app.core.exceptions import Conflict, Unauthorized
 from app.schemas.auth import (
     AuthResponse,
     ChangePasswordRequest,
@@ -120,11 +121,9 @@ async def me(user: CurrentUser, settings: SettingsDep) -> UserOut:
 )
 async def change_password(
     body: ChangePasswordRequest,
-    user: CurrentUser,
+    user: WritableUser,
     db: SessionDep,
     settings: SettingsDep,
     token: RefreshCookie = None,
 ) -> None:
-    if settings.is_demo_email(user.email):
-        raise Forbidden("The demo account’s password can’t be changed.", code="DEMO_ACCOUNT")
     await AuthService(db, settings).change_password(user, body.current_password, body.new_password, token)

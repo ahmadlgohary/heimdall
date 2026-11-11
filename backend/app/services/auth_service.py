@@ -3,6 +3,7 @@ import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
+import jwt
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -12,9 +13,12 @@ from app.core.security import (
     DUMMY_PASSWORD_HASH,
     AccessToken,
     create_access_token,
+    create_demo_refresh_token,
+    decode_demo_refresh_token,
     generate_token,
     hash_password,
     hash_token,
+    is_jwt_shaped,
     verify_password,
 )
 from app.db.models import RefreshToken, User
@@ -69,14 +73,32 @@ class AuthService:
         )
         if not user or not ok:
             raise Unauthorized("Incorrect email or password.", code="INVALID_CREDENTIALS")
+        if self.settings.is_demo_email(user.email):
+            return self._demo_session(user)  # read-only demo: nothing is stored
         token, raw = await self._issue(user)
         await self.session.commit()
         return Session(user, create_access_token(user.id, self.settings), raw, token.expires_at)
+
+    def _demo_session(self, user: User) -> Session:
+        demo = create_demo_refresh_token(user.id, self.settings)
+        return Session(user, create_access_token(user.id, self.settings), demo.token, demo.expires_at)
+
+    async def _refresh_demo(self, raw_token: str) -> Session:
+        try:
+            user_id = decode_demo_refresh_token(raw_token, self.settings)
+        except (jwt.PyJWTError, ValueError) as exc:
+            raise Unauthorized("Session expired. Sign in again.", code="REFRESH_INVALID") from exc
+        user = await self.users.get(user_id)
+        if user is None or not self.settings.is_demo_email(user.email):
+            raise Unauthorized("Session expired. Sign in again.", code="REFRESH_INVALID")
+        return self._demo_session(user)
 
     async def refresh(self, raw_token: str | None) -> Session:
         """Rotate the refresh token. Reusing a rotated token revokes the whole family."""
         if not raw_token:
             raise Unauthorized("Session expired. Sign in again.", code="REFRESH_INVALID")
+        if is_jwt_shaped(raw_token):
+            return await self._refresh_demo(raw_token)
         now = datetime.now(UTC)
         current = await self.tokens.get_by_hash(hash_token(raw_token), for_update=True)
         if current is None:
@@ -99,8 +121,8 @@ class AuthService:
         return Session(user, create_access_token(user.id, self.settings), raw, new_token.expires_at)
 
     async def logout(self, raw_token: str | None) -> None:
-        if not raw_token:
-            return
+        if not raw_token or is_jwt_shaped(raw_token):
+            return  # demo sessions are stateless: clearing the cookie is all there is
         token = await self.tokens.get_by_hash(hash_token(raw_token))
         if token is not None:
             await self.tokens.revoke_family(token.family_id, datetime.now(UTC))

@@ -117,7 +117,7 @@ export default function SettingsPage() {
         {user?.is_demo ? (
           <Panel bodyClassName="p-4 sm:p-5">
             <p className="text-base text-muted">
-              The demo account is shared, so its password can’t be changed. Create your own account to try this.
+              The demo account is read-only, so its password can’t be changed. Create your own account to try this.
             </p>
           </Panel>
         ) : (

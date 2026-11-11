@@ -14,11 +14,13 @@ import { Button } from '@/components/ui/button'
 import { ConfirmDialog } from '@/components/ui/dialog'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useEvent, useEventDeliveries, useEventPayload, useReplayEvent } from '@/hooks/use-events'
+import { useReadOnly } from '@/hooks/use-read-only'
 import { errorMessage } from '@/lib/api-client'
 import { queryKeys } from '@/lib/query-client'
 import { formatBytes, formatDateTime, formatRelative, shortId } from '@/lib/utils'
 
 export default function EventDetailPage() {
+  const readOnly = useReadOnly()
   const { id = '' } = useParams()
   const event = useEvent(id)
   const live = !!event.data && !['delivered', 'failed'].includes(event.data.status)
@@ -81,10 +83,12 @@ export default function EventDetailPage() {
             </p>
           </div>
           <div className="flex flex-col items-start gap-1.5 sm:items-end">
-            <Button variant="primary" onClick={() => setConfirming(true)} disabled={!e.endpoint_enabled || live}>
+            <Button variant="primary" onClick={() => setConfirming(true)} disabled={readOnly || !e.endpoint_enabled || live}>
               <RotateCcw /> Replay event
             </Button>
-            {!e.endpoint_enabled ? (
+            {readOnly ? (
+              <p className="text-sm text-muted">Replays are off in the read-only demo.</p>
+            ) : !e.endpoint_enabled ? (
               <p className="text-sm text-muted">Enable the endpoint to replay.</p>
             ) : live ? (
               <p className="text-sm text-muted">Available once delivery finishes.</p>
@@ -104,8 +108,7 @@ export default function EventDetailPage() {
               <p className="flex items-start gap-2.5 border-b border-dashed border-border-strong bg-sunken/50 px-4 py-3 text-sm text-muted sm:px-5">
                 <SampleTag className="mt-px" />
                 <span>
-                  This event is sample data from the demo seed. Its original delivery attempts were simulated and never
-                  sent. Replaying it sends it for real, to the demo’s test receiver.
+                  This event is sample data from the demo seed. Its delivery attempts were simulated and never sent.
                 </span>
               </p>
             )}

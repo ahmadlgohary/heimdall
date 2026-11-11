@@ -7,7 +7,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import Settings
-from app.core.exceptions import Unauthorized
+from app.core.exceptions import Forbidden, Unauthorized
 from app.core.rate_limit import limiter
 from app.core.security import decode_access_token
 from app.db.models import User
@@ -55,6 +55,19 @@ async def get_current_user(
 
 
 CurrentUser = Annotated[User, Depends(get_current_user)]
+
+
+DEMO_READ_ONLY_MESSAGE = "The demo account is read-only. Create your own account to make changes."
+
+
+async def get_writable_user(user: CurrentUser, settings: SettingsDep) -> User:
+    """The signed-in user, for routes that change data. The demo account is read-only."""
+    if settings.is_demo_email(user.email):
+        raise Forbidden(DEMO_READ_ONLY_MESSAGE, code="DEMO_READ_ONLY")
+    return user
+
+
+WritableUser = Annotated[User, Depends(get_writable_user)]
 
 
 def client_ip(request: Request) -> str:

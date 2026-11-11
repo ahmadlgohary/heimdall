@@ -4,7 +4,7 @@ from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, Query, Response, status
 
-from app.api.dependencies import CurrentUser, SessionDep, SettingsDep, StorageDep
+from app.api.dependencies import CurrentUser, SessionDep, SettingsDep, StorageDep, WritableUser
 from app.schemas.common import Page, PageParams, page_params
 from app.schemas.event import DeliveryOut, EventDetail, EventSummary
 from app.services.event_service import EventService
@@ -80,6 +80,6 @@ async def list_deliveries(
 
 @router.post("/{event_id}/replay", status_code=status.HTTP_202_ACCEPTED)
 async def replay_event(
-    event_id: uuid.UUID, user: CurrentUser, db: SessionDep, storage: StorageDep, settings: SettingsDep
+    event_id: uuid.UUID, user: WritableUser, db: SessionDep, storage: StorageDep, settings: SettingsDep
 ) -> DeliveryOut:
     return await EventService(db, storage, settings).replay(user.id, event_id)

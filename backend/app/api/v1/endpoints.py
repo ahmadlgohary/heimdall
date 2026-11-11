@@ -2,7 +2,7 @@ import uuid
 
 from fastapi import APIRouter, BackgroundTasks, Depends, status
 
-from app.api.dependencies import CurrentUser, SessionDep, SettingsDep, StorageDep
+from app.api.dependencies import CurrentUser, SessionDep, SettingsDep, StorageDep, WritableUser
 from app.schemas.common import Page, PageParams, page_params
 from app.schemas.endpoint import (
     EndpointCreate,
@@ -33,7 +33,7 @@ async def list_endpoints(
 
 @router.post("", status_code=status.HTTP_201_CREATED)
 async def create_endpoint(
-    body: EndpointCreate, user: CurrentUser, db: SessionDep, settings: SettingsDep
+    body: EndpointCreate, user: WritableUser, db: SessionDep, settings: SettingsDep
 ) -> EndpointWithSecret:
     endpoint, secret = await EndpointService(db, settings).create(user.id, body)
     return EndpointWithSecret(**EndpointOut.model_validate(endpoint).model_dump(), signing_secret=secret)
@@ -50,7 +50,7 @@ async def get_endpoint(
 
 @router.patch("/{endpoint_id}")
 async def update_endpoint(
-    endpoint_id: uuid.UUID, body: EndpointUpdate, user: CurrentUser, db: SessionDep, settings: SettingsDep
+    endpoint_id: uuid.UUID, body: EndpointUpdate, user: WritableUser, db: SessionDep, settings: SettingsDep
 ) -> EndpointOut:
     service = EndpointService(db, settings)
     endpoint = await service.update(user.id, endpoint_id, body)
@@ -60,7 +60,7 @@ async def update_endpoint(
 @router.delete("/{endpoint_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_endpoint(
     endpoint_id: uuid.UUID,
-    user: CurrentUser,
+    user: WritableUser,
     db: SessionDep,
     settings: SettingsDep,
     storage: StorageDep,
@@ -72,14 +72,14 @@ async def delete_endpoint(
 
 @router.post("/{endpoint_id}/rotate-secret")
 async def rotate_secret(
-    endpoint_id: uuid.UUID, user: CurrentUser, db: SessionDep, settings: SettingsDep
+    endpoint_id: uuid.UUID, user: WritableUser, db: SessionDep, settings: SettingsDep
 ) -> SecretOut:
     return SecretOut(signing_secret=await EndpointService(db, settings).rotate_secret(user.id, endpoint_id))
 
 
 @router.post("/{endpoint_id}/test", status_code=status.HTTP_202_ACCEPTED)
 async def send_test_event(
-    endpoint_id: uuid.UUID, user: CurrentUser, db: SessionDep, settings: SettingsDep, storage: StorageDep
+    endpoint_id: uuid.UUID, user: WritableUser, db: SessionDep, settings: SettingsDep, storage: StorageDep
 ) -> TestEventOut:
     event_id = await EndpointService(db, settings).send_test(user.id, endpoint_id, storage)
     return TestEventOut(event_id=event_id, status="queued", message="Event accepted for delivery")

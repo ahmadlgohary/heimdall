@@ -12,6 +12,17 @@ export function signInAsDemo() {
   return user
 }
 
+/**
+ * Sign in as a regular (not demo) owner of the seeded data. The demo account is
+ * read-only, so tests that change things use this instead.
+ */
+export function signInAsSeededOwner() {
+  const user = db.users.find((u) => u.email === DEMO.email)!
+  user.email = 'owner@example.com'
+  localStorage.setItem('heimdall.mock.session', user.id)
+  return user
+}
+
 /** Sign in as a brand-new account with no data. */
 export function signInAsNewUser() {
   const user = { id: 'new-user-id', email: 'new@example.com', password: 'NewPassword123', created_at: new Date().toISOString() }
