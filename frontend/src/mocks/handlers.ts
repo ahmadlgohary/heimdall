@@ -266,16 +266,6 @@ function authed(fn: (ctx: Ctx & { userId: string; url: URL }) => Response | Prom
 
 const param = (ctx: Ctx, key: string) => String(ctx.params[key])
 
-/** Like authed(), for routes that change data: the demo account is read-only. */
-function writable(fn: Parameters<typeof authed>[0]) {
-  return authed((ctx) => {
-    const user = db.users.find((u) => u.id === ctx.userId)
-    if (user?.email === DEMO.email)
-      return error(403, 'DEMO_READ_ONLY', 'The demo account is read-only. Create your own account to make changes.')
-    return fn(ctx)
-  })
-}
-
 let seeded = false
 export function ensureSeeded() {
   if (seeded) return
@@ -341,12 +331,20 @@ export const handlers = [
 
   http.get(`${BASE}/auth/me`, authed(({ userId }) => {
     const u = db.users.find((x) => x.id === userId)!
-    return HttpResponse.json({ id: u.id, email: u.email, created_at: u.created_at, is_demo: u.email === DEMO.email })
+    const isDemo = u.email === DEMO.email
+    return HttpResponse.json({
+      id: u.id,
+      email: u.email,
+      created_at: u.created_at,
+      is_demo: isDemo,
+      demo_expires_at: isDemo ? new Date(Date.now() + 2 * 3_600_000).toISOString() : null,
+    })
   })),
 
-  http.post(`${BASE}/auth/change-password`, writable(async ({ request, userId }) => {
+  http.post(`${BASE}/auth/change-password`, authed(async ({ request, userId }) => {
     const body = (await request.json()) as { current_password: string; new_password: string }
     const u = db.users.find((x) => x.id === userId)!
+    if (u.email === DEMO.email) return error(403, 'DEMO_ACCOUNT', 'The demo account’s password can’t be changed.')
     if (u.password !== body.current_password) return error(400, 'INVALID_PASSWORD', 'Current password is incorrect.')
     u.password = body.new_password
     return new HttpResponse(null, { status: 204 })
@@ -354,7 +352,7 @@ export const handlers = [
 
   http.get(`${BASE}/demo`, async () => {
     await latency()
-    return HttpResponse.json({ enabled: true, email: DEMO.email, password: DEMO.password })
+    return HttpResponse.json({ enabled: true, email: DEMO.email, password: DEMO.password, sandbox_minutes: 120 })
   }),
 
   /* dashboard & analytics */
@@ -438,7 +436,7 @@ export const handlers = [
     return HttpResponse.json(paginate(items, url))
   })),
 
-  http.post(`${BASE}/endpoints`, writable(async ({ request, userId }) => {
+  http.post(`${BASE}/endpoints`, authed(async ({ request, userId }) => {
     const body = (await request.json()) as { name: string; url: string; description?: string | null; enabled?: boolean }
     if (!body.name?.trim()) return error(422, 'VALIDATION_ERROR', 'Name is required.')
     const urlError = validateUrl(body.url)
@@ -466,7 +464,7 @@ export const handlers = [
     return HttpResponse.json(toEndpoint(ep))
   })),
 
-  http.patch(`${BASE}/endpoints/:id`, writable(async (ctx) => {
+  http.patch(`${BASE}/endpoints/:id`, authed(async (ctx) => {
     const ep = ownedEndpoints(ctx.userId).find((e) => e.id === param(ctx, 'id'))
     if (!ep) return error(404, 'ENDPOINT_NOT_FOUND', 'The requested endpoint does not exist.')
     const body = (await ctx.request.json()) as Partial<Endpoint>
@@ -484,7 +482,7 @@ export const handlers = [
     return HttpResponse.json(toEndpoint(ep))
   })),
 
-  http.delete(`${BASE}/endpoints/:id`, writable((ctx) => {
+  http.delete(`${BASE}/endpoints/:id`, authed((ctx) => {
     const idx = db.endpoints.findIndex((e) => e.id === param(ctx, 'id') && e.user_id === ctx.userId)
     if (idx < 0) return error(404, 'ENDPOINT_NOT_FOUND', 'The requested endpoint does not exist.')
     const [ep] = db.endpoints.splice(idx, 1)
@@ -494,7 +492,7 @@ export const handlers = [
     return new HttpResponse(null, { status: 204 })
   })),
 
-  http.post(`${BASE}/endpoints/:id/rotate-secret`, writable((ctx) => {
+  http.post(`${BASE}/endpoints/:id/rotate-secret`, authed((ctx) => {
     const ep = ownedEndpoints(ctx.userId).find((e) => e.id === param(ctx, 'id'))
     if (!ep) return error(404, 'ENDPOINT_NOT_FOUND', 'The requested endpoint does not exist.')
     ep.signing_secret = newSecret()
@@ -502,7 +500,7 @@ export const handlers = [
     return HttpResponse.json({ signing_secret: ep.signing_secret })
   })),
 
-  http.post(`${BASE}/endpoints/:id/test`, writable((ctx) => {
+  http.post(`${BASE}/endpoints/:id/test`, authed((ctx) => {
     const ep = ownedEndpoints(ctx.userId).find((e) => e.id === param(ctx, 'id'))
     if (!ep) return error(404, 'ENDPOINT_NOT_FOUND', 'The requested endpoint does not exist.')
     if (!ep.enabled) return error(409, 'ENDPOINT_DISABLED', 'Enable the endpoint before sending a test event.')
@@ -570,7 +568,7 @@ export const handlers = [
     return HttpResponse.json(paginate(items, ctx.url))
   })),
 
-  http.post(`${BASE}/events/:id/replay`, writable((ctx) => {
+  http.post(`${BASE}/events/:id/replay`, authed((ctx) => {
     const ev = ownedEvent(ctx.userId, param(ctx, 'id'))
     if (!ev) return error(404, 'EVENT_NOT_FOUND', 'The requested event does not exist.')
     const ep = db.endpoints.find((e) => e.id === ev.endpoint_id)!
@@ -612,7 +610,7 @@ export const handlers = [
     return HttpResponse.json(paginate(items, url))
   })),
 
-  http.post(`${BASE}/api-keys`, writable(async ({ request, userId }) => {
+  http.post(`${BASE}/api-keys`, authed(async ({ request, userId }) => {
     const { name } = (await request.json()) as { name: string }
     if (!name?.trim()) return error(422, 'VALIDATION_ERROR', 'Name is required.')
     const raw = `wh_live_${uuid().replace(/-/g, '')}`
@@ -631,7 +629,7 @@ export const handlers = [
     return HttpResponse.json({ ...key, key: raw }, { status: 201 })
   })),
 
-  http.delete(`${BASE}/api-keys/:id`, writable((ctx) => {
+  http.delete(`${BASE}/api-keys/:id`, authed((ctx) => {
     const k = db.apiKeys.find((x) => x.id === param(ctx, 'id') && x.user_id === ctx.userId)
     if (!k) return error(404, 'API_KEY_NOT_FOUND', 'The requested API key does not exist.')
     k.revoked_at = new Date().toISOString()

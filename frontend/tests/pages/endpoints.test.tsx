@@ -1,7 +1,7 @@
 import { screen, waitFor, within } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 import { db } from '@/mocks/db'
-import { renderApp, signInAsSeededOwner } from '../utils'
+import { renderApp, signInAsDemo, signInAsNewUser } from '../utils'
 
 async function desktopTable() {
   const table = await screen.findByRole('table')
@@ -11,7 +11,7 @@ async function desktopTable() {
 
 describe('endpoints', () => {
   it('lists the user’s endpoints', async () => {
-    signInAsSeededOwner()
+    signInAsDemo()
     renderApp('/endpoints')
     const table = await desktopTable()
     for (const name of ['Production orders', 'Billing service', 'Slack relay', 'Legacy CRM']) {
@@ -20,7 +20,7 @@ describe('endpoints', () => {
   })
 
   it('opens the create modal and creates a valid endpoint, revealing the secret once', async () => {
-    signInAsSeededOwner()
+    signInAsDemo()
     const { user } = renderApp('/endpoints')
     await desktopTable()
     await user.click(screen.getAllByRole('button', { name: 'Add endpoint' })[0])
@@ -35,7 +35,7 @@ describe('endpoints', () => {
   })
 
   it('shows the API’s error for a private destination', async () => {
-    signInAsSeededOwner()
+    signInAsDemo()
     const { user } = renderApp('/endpoints?new=1')
     const dialog = await screen.findByRole('dialog', { name: 'Add endpoint' })
     await user.type(within(dialog).getByLabelText('Name'), 'Local')
@@ -45,7 +45,7 @@ describe('endpoints', () => {
   })
 
   it('surfaces server-side URL validation on the field', async () => {
-    signInAsSeededOwner()
+    signInAsDemo()
     const { user } = renderApp('/endpoints?new=1')
     const dialog = await screen.findByRole('dialog', { name: 'Add endpoint' })
     await user.type(within(dialog).getByLabelText('Name'), 'Plain http')
@@ -55,7 +55,7 @@ describe('endpoints', () => {
   })
 
   it('disables an endpoint', async () => {
-    signInAsSeededOwner()
+    signInAsDemo()
     const { user } = renderApp('/endpoints')
     const table = await desktopTable()
     const toggle = within(table).getByRole('switch', { name: 'Disable Production orders' })
@@ -66,7 +66,7 @@ describe('endpoints', () => {
   })
 
   it('deletes an endpoint only after confirmation', async () => {
-    signInAsSeededOwner()
+    signInAsDemo()
     const { user } = renderApp('/endpoints')
     const table = await desktopTable()
     await user.click(within(table).getByRole('button', { name: 'Actions for Slack relay' }))
@@ -81,7 +81,7 @@ describe('endpoints', () => {
   })
 
   it('rotates a signing secret after confirmation', async () => {
-    signInAsSeededOwner()
+    signInAsDemo()
     const before = db.endpoints.find((e) => e.name === 'Billing service')!.signing_secret
     const { user } = renderApp('/endpoints')
     const table = await desktopTable()
@@ -93,5 +93,26 @@ describe('endpoints', () => {
     const after = db.endpoints.find((e) => e.name === 'Billing service')!.signing_secret
     expect(after).not.toBe(before)
     expect(shown.textContent).toBe(after)
+  })
+
+  it('gives demo visitors a visible button that sends a test event', async () => {
+    signInAsDemo()
+    const { user } = renderApp('/endpoints')
+    const table = await desktopTable()
+    expect(within(table).getByRole('columnheader', { name: 'Try it' })).toBeInTheDocument()
+    const before = db.events.length
+    await user.click(within(table).getByRole('button', { name: 'Send demo event to Production orders' }))
+    expect(await screen.findByText('Test event sent to Production orders')).toBeInTheDocument()
+    expect(db.events.length).toBe(before + 1)
+  })
+
+  it('does not show the demo button to regular accounts', async () => {
+    const owner = signInAsNewUser()
+    const demoId = db.endpoints.find((e) => e.name === 'Production orders')!.user_id
+    for (const e of db.endpoints) if (e.user_id === demoId) e.user_id = owner.id
+    renderApp('/endpoints')
+    const table = await desktopTable()
+    expect(within(table).queryByRole('columnheader', { name: 'Try it' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Send demo event/ })).not.toBeInTheDocument()
   })
 })

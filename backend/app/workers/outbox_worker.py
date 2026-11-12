@@ -24,6 +24,8 @@ from app.messaging.connection import connect, open_channel
 from app.messaging.messages import DeliveryJob
 from app.messaging.publisher import JobPublisher
 from app.messaging.topology import declare_topology
+from app.services.demo_service import sweep_expired
+from app.services.storage_service import build_storage
 from app.workers.heartbeat import beat, worker_id
 from app.workers.retry_scheduler import requeue_stalled
 
@@ -83,6 +85,7 @@ async def run(
         channel = await open_channel(connection)
         exchange, _ = await declare_topology(channel)
         publisher = JobPublisher(exchange)
+        storage = build_storage(settings)
         logger.info("outbox publisher started", extra={"worker_id": wid})
         last_beat = last_sweep = 0.0
         backoff = settings.outbox_poll_interval
@@ -93,6 +96,7 @@ async def run(
                 if now - last_sweep > SWEEP_EVERY:
                     async with factory() as session:
                         await requeue_stalled(session)
+                    await sweep_expired(factory, storage)  # demo copies past their time
                     last_sweep = now
                 if now - last_beat > HEARTBEAT_EVERY:
                     await beat(factory, wid, "publisher")

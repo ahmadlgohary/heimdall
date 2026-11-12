@@ -12,16 +12,14 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Switch } from '@/components/ui/switch'
+import { useAuth } from '@/contexts/auth-context'
 import { useEndpoints, useUpdateEndpoint } from '@/hooks/use-endpoints'
-import { READ_ONLY_HINT, useReadOnly } from '@/hooks/use-read-only'
-import { ReadOnlyNote } from '@/components/common/read-only-note'
 import { cn, formatNumber, formatPercent, formatRelative } from '@/lib/utils'
 import type { Endpoint } from '@/types/api'
 
@@ -32,7 +30,6 @@ function SuccessRate({ rate }: { rate: number | null | undefined }) {
 }
 
 function EndpointMenu({ endpoint, onAction }: { endpoint: Endpoint; onAction: (a: EndpointAction, e: Endpoint) => void }) {
-  const readOnly = useReadOnly()
   const test = useSendTestWithToast()
   return (
     <DropdownMenu>
@@ -42,18 +39,17 @@ function EndpointMenu({ endpoint, onAction }: { endpoint: Endpoint; onAction: (a
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent>
-        {readOnly && <DropdownMenuLabel>{READ_ONLY_HINT}</DropdownMenuLabel>}
-        <DropdownMenuItem disabled={readOnly || !endpoint.enabled} onSelect={() => test.run(endpoint)}>
+        <DropdownMenuItem disabled={!endpoint.enabled} onSelect={() => test.run(endpoint)}>
           <Send /> Send test event
         </DropdownMenuItem>
-        <DropdownMenuItem disabled={readOnly} onSelect={() => onAction('edit', endpoint)}>
+        <DropdownMenuItem onSelect={() => onAction('edit', endpoint)}>
           <Pencil /> Edit
         </DropdownMenuItem>
-        <DropdownMenuItem disabled={readOnly} onSelect={() => onAction('rotate', endpoint)}>
+        <DropdownMenuItem onSelect={() => onAction('rotate', endpoint)}>
           <RefreshCcw /> Rotate signing secret
         </DropdownMenuItem>
         <DropdownMenuSeparator />
-        <DropdownMenuItem tone="danger" disabled={readOnly} onSelect={() => onAction('delete', endpoint)}>
+        <DropdownMenuItem tone="danger" onSelect={() => onAction('delete', endpoint)}>
           <Trash2 /> Delete
         </DropdownMenuItem>
       </DropdownMenuContent>
@@ -61,14 +57,30 @@ function EndpointMenu({ endpoint, onAction }: { endpoint: Endpoint; onAction: (a
   )
 }
 
+/** Demo only: a visible shortcut for the test event that otherwise lives in the row's menu. */
+function SendDemoButton({ endpoint }: { endpoint: Endpoint }) {
+  const test = useSendTestWithToast()
+  const sending = test.pending && test.variables === endpoint.id
+  return (
+    <Button
+      variant="secondary"
+      size="sm"
+      disabled={!endpoint.enabled}
+      loading={sending}
+      onClick={() => test.run(endpoint)}
+      aria-label={`Send demo event to ${endpoint.name}`}
+      title={endpoint.enabled ? undefined : 'Turn the endpoint on to send it events'}
+    >
+      <Send /> Send demo event
+    </Button>
+  )
+}
+
 function EnabledSwitch({ endpoint }: { endpoint: Endpoint }) {
   const update = useUpdateEndpoint()
-  const readOnly = useReadOnly()
   return (
     <Switch
       checked={endpoint.enabled}
-      disabled={readOnly}
-      title={readOnly ? READ_ONLY_HINT : undefined}
       onCheckedChange={(enabled) => update.mutate({ id: endpoint.id, body: { enabled } })}
       aria-label={`${endpoint.enabled ? 'Disable' : 'Enable'} ${endpoint.name}`}
     />
@@ -78,11 +90,12 @@ function EnabledSwitch({ endpoint }: { endpoint: Endpoint }) {
 export default function EndpointsPage() {
   const [params, setParams] = useSearchParams()
   const { data, isPending, isError, error, refetch } = useEndpoints()
+  const { user } = useAuth()
+  const isDemo = user?.is_demo ?? false
   const [query, setQuery] = useState('')
   const [action, setAction] = useState<EndpointAction>(null)
   const [target, setTarget] = useState<Endpoint | null>(null)
-  const readOnly = useReadOnly()
-  const creating = params.get('new') === '1' && !readOnly
+  const creating = params.get('new') === '1'
 
   const setCreating = (open: boolean) => {
     const next = new URLSearchParams(params)
@@ -110,13 +123,11 @@ export default function EndpointsPage() {
         title="Endpoints"
         description="URLs that receive your events. Each one has its own signing secret."
         actions={
-          <Button variant="primary" onClick={() => setCreating(true)} disabled={readOnly} title={readOnly ? READ_ONLY_HINT : undefined}>
+          <Button variant="primary" onClick={() => setCreating(true)}>
             <Plus /> Add endpoint
           </Button>
         }
       />
-
-      <ReadOnlyNote />
 
       <Panel
         title={total ? `${total} endpoint${total === 1 ? '' : 's'}` : 'Endpoints'}
@@ -167,6 +178,7 @@ export default function EndpointsPage() {
                     <th scope="col" className="px-3 py-2.5 text-right font-medium">Events</th>
                     <th scope="col" className="px-3 py-2.5 text-right font-medium">Success</th>
                     <th scope="col" className="px-3 py-2.5 text-right font-medium">Last event</th>
+                    {isDemo && <th scope="col" className="px-3 py-2.5 text-center font-medium">Try it</th>}
                     <th scope="col" className="w-12 px-3 py-2.5"><span className="sr-only">Actions</span></th>
                   </tr>
                 </thead>
@@ -195,6 +207,11 @@ export default function EndpointsPage() {
                         <SuccessRate rate={e.stats?.success_rate} />
                       </td>
                       <td className="tabular px-3 py-3 text-right whitespace-nowrap text-muted">{formatRelative(e.stats?.last_event_at)}</td>
+                      {isDemo && (
+                        <td className="px-3 py-3 text-right">
+                          <SendDemoButton endpoint={e} />
+                        </td>
+                      )}
                       <td className="px-3 py-3 text-right">
                         <EndpointMenu endpoint={e} onAction={onAction} />
                       </td>
@@ -236,6 +253,11 @@ export default function EndpointsPage() {
                       <dd className="tabular text-muted">{formatRelative(e.stats?.last_event_at)}</dd>
                     </div>
                   </dl>
+                  {isDemo && (
+                    <div>
+                      <SendDemoButton endpoint={e} />
+                    </div>
+                  )}
                 </li>
               ))}
             </ul>

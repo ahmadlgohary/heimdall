@@ -72,37 +72,6 @@ def decode_access_token(token: str, settings: Settings) -> uuid.UUID:
         raise jwt.InvalidTokenError("bad subject") from exc
 
 
-def create_demo_refresh_token(user_id: uuid.UUID, settings: Settings) -> AccessToken:
-    """Refresh token for the read-only demo account. Self-contained (a signed JWT) so
-    demo sessions never write to the database; opaque tokens never contain dots."""
-    now = datetime.now(UTC)
-    expires = now + timedelta(days=settings.refresh_token_expire_days)
-    claims = {
-        "sub": str(user_id),
-        "type": "demo_refresh",
-        "iat": int(now.timestamp()),
-        "exp": int(expires.timestamp()),
-        "jti": secrets.token_hex(8),
-    }
-    return AccessToken(jwt.encode(claims, settings.jwt_secret, algorithm=settings.jwt_algorithm), expires)
-
-
-def decode_demo_refresh_token(token: str, settings: Settings) -> uuid.UUID:
-    claims = jwt.decode(
-        token,
-        settings.jwt_secret,
-        algorithms=[settings.jwt_algorithm],
-        options={"require": ["exp", "iat", "sub", "type"]},
-    )
-    if claims.get("type") != "demo_refresh":
-        raise jwt.InvalidTokenError("not a demo refresh token")
-    return uuid.UUID(claims["sub"])
-
-
-def is_jwt_shaped(token: str) -> bool:
-    return token.count(".") == 2
-
-
 def generate_token(nbytes: int = 32) -> str:
     return secrets.token_urlsafe(nbytes)
 

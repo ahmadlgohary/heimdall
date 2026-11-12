@@ -100,6 +100,10 @@ class Settings(BaseSettings):
     # (defaults to API_URL + /demo-receiver; in docker compose, the internal service URL).
     demo_receiver_enabled: bool = False
     demo_receiver_url: str = ""
+    # Each "Sign in to the demo" gets a private copy of the demo account, deleted on sign-out
+    # or after this long. The cap bounds how many copies can exist at once.
+    demo_sandbox_ttl_minutes: int = Field(default=120, ge=5, le=24 * 60)
+    demo_max_sandboxes: int = Field(default=200, ge=1)
 
     # Directory of the built frontend (frontend/dist). When set, the API also serves the
     # web app from the same origin. The production image sets it; leave it empty for local

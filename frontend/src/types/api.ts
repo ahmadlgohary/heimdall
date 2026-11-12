@@ -35,12 +35,16 @@ export interface User {
   created_at?: ISODate
   /** the shared demo account */
   is_demo?: boolean
+  /** a private demo copy: when it's deleted */
+  demo_expires_at?: ISODate | null
 }
 
 export interface DemoInfo {
   enabled: boolean
   email: string | null
   password: string | null
+  /** each demo sign-in gets a private copy, deleted on sign-out or after this long */
+  sandbox_minutes?: number | null
 }
 
 /** "demo_fixture": seeded sample history whose delivery attempts were simulated, never sent. */

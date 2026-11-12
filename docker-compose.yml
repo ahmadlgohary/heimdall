@@ -27,6 +27,7 @@ x-backend: &backend
     # local payloads unless DEV_STORAGE_BACKEND=s3 (then the S3 settings from .env apply)
     STORAGE_BACKEND: ${DEV_STORAGE_BACKEND:-local}
     RUN_PUBLISHER_IN_API: "false" # the publisher service below does this
+    FRONTEND_DIST: "" # the frontend container serves the app here; ignore any local path from .env
     LOCAL_STORAGE_PATH: /data/storage
     # lets endpoints target the mock-receiver container
     ALLOW_PRIVATE_DESTINATIONS: "true"

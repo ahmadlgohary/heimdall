@@ -12,6 +12,9 @@ class User(UUIDPrimaryKey, CreatedAt, Base):
 
     email: Mapped[str] = mapped_column(String(255), unique=True)
     password_hash: Mapped[str] = mapped_column(Text)
+    # Set only on a visitor's private copy of the demo: when it's deleted. NULL for real users
+    # and for the demo template itself.
+    demo_expires_at: Mapped[datetime | None] = mapped_column(index=True)
     updated_at: Mapped[datetime] = mapped_column(default=utcnow, onupdate=utcnow, server_default=func.now())
 
 

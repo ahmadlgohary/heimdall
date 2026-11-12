@@ -6,12 +6,13 @@ from app.api.dependencies import (
     CurrentUser,
     SessionDep,
     SettingsDep,
-    WritableUser,
+    StorageDep,
     auth_rate_limit,
     refresh_rate_limit,
 )
 from app.core.config import Settings
-from app.core.exceptions import Conflict, Unauthorized
+from app.core.exceptions import Conflict, Forbidden, Unauthorized
+from app.db.models import User
 from app.schemas.auth import (
     AuthResponse,
     ChangePasswordRequest,
@@ -21,6 +22,7 @@ from app.schemas.auth import (
     UserOut,
 )
 from app.services.auth_service import AuthService, Session
+from app.services.demo_service import delete_sandboxes
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -51,7 +53,7 @@ def _clear_refresh_cookie(response: Response, settings: Settings) -> None:
 
 
 def user_out(user, settings: Settings) -> UserOut:
-    return UserOut.model_validate(user).model_copy(update={"is_demo": settings.is_demo_email(user.email)})
+    return UserOut.model_validate(user).model_copy(update={"is_demo": user.demo_expires_at is not None})
 
 
 def _auth_response(session: Session, settings: Settings) -> AuthResponse:
@@ -105,9 +107,17 @@ async def refresh(
 
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
 async def logout(
-    response: Response, db: SessionDep, settings: SettingsDep, token: RefreshCookie = None
+    response: Response,
+    db: SessionDep,
+    settings: SettingsDep,
+    storage: StorageDep,
+    token: RefreshCookie = None,
 ) -> None:
-    await AuthService(db, settings).logout(token)
+    owner = await AuthService(db, settings).logout(token)
+    if owner is not None:
+        user = await db.get(User, owner)
+        if user is not None and user.demo_expires_at is not None:
+            await delete_sandboxes(db, storage, [user.id])  # signing out of a demo copy deletes it
     _clear_refresh_cookie(response, settings)
 
 
@@ -121,9 +131,13 @@ async def me(user: CurrentUser, settings: SettingsDep) -> UserOut:
 )
 async def change_password(
     body: ChangePasswordRequest,
-    user: WritableUser,
+    user: CurrentUser,
     db: SessionDep,
     settings: SettingsDep,
     token: RefreshCookie = None,
 ) -> None:
+    if user.demo_expires_at is not None:
+        raise Forbidden(
+            "Demo copies don’t have a password. Create your own account to try this.", code="DEMO_ACCOUNT"
+        )
     await AuthService(db, settings).change_password(user, body.current_password, body.new_password, token)

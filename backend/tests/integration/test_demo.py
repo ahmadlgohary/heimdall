@@ -1,5 +1,7 @@
 """Demo environment: seed script, fixture labelling, demo account guards, built-in receiver."""
 
+import uuid
+
 import httpx
 import pytest
 from sqlalchemy import func, select
@@ -115,6 +117,7 @@ async def test_demo_login_and_guards(demo_client, demo_settings, session_factory
         "enabled": True,
         "email": demo_settings.demo_email,
         "password": demo_settings.demo_password,
+        "sandbox_minutes": demo_settings.demo_sandbox_ttl_minutes,
     }
 
     login = await client.post(
@@ -130,7 +133,7 @@ async def test_demo_login_and_guards(demo_client, demo_settings, session_factory
         json={"current_password": demo_settings.demo_password, "new_password": "Hijacked-Passw0rd"},
         headers=headers,
     )
-    assert change.status_code == 403 and change.json()["error"]["code"] == "DEMO_READ_ONLY"
+    assert change.status_code == 403 and change.json()["error"]["code"] == "DEMO_ACCOUNT"
 
     taken = await client.post(
         "/api/v1/auth/register",
@@ -146,7 +149,12 @@ async def test_demo_login_and_guards(demo_client, demo_settings, session_factory
 
 
 async def test_demo_info_when_disabled(client):
-    assert (await client.get("/api/v1/demo")).json() == {"enabled": False, "email": None, "password": None}
+    assert (await client.get("/api/v1/demo")).json() == {
+        "enabled": False,
+        "email": None,
+        "password": None,
+        "sandbox_minutes": None,
+    }
     me = await client.post(
         "/api/v1/auth/register", json={"email": "x@example.com", "password": "Regular-Passw0rd"}
     )
@@ -209,154 +217,180 @@ async def test_receiver_returns_full_deliveries_by_event_id(demo_client):
     )
 
 
-# ---------- the demo account is read-only ----------
+# ---------- private demo copies ----------
 
-TABLES = (
-    "users",
-    "refresh_tokens",
-    "endpoints",
-    "api_keys",
-    "events",
-    "deliveries",
-    "delivery_attempts",
-    "outbox_messages",
-    "worker_heartbeats",
-)
+from datetime import UTC, datetime, timedelta  # noqa: E402
+
+from sqlalchemy import text, update  # noqa: E402
+
+from app.services.demo_service import SANDBOX_DOMAIN, sweep_expired  # noqa: E402
 
 
-async def fingerprint(db) -> dict[str, tuple[int, str | None]]:
-    """Row count and a hash of every row's contents, per table."""
-    from sqlalchemy import text
+async def demo_login(app, settings):
+    """Sign in to the demo as a fresh browser. Returns an unopened client holding that session."""
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as tmp:
+        res = await tmp.post(
+            "/api/v1/auth/login", json={"email": settings.demo_email, "password": settings.demo_password}
+        )
+        assert res.status_code == 200, res.text
+        cookies = tmp.cookies
+    body = res.json()
+    client = httpx.AsyncClient(transport=transport, base_url="http://test", cookies=cookies)
+    return client, {"Authorization": f"Bearer {body['access_token']}"}, body["user"]
 
-    out = {}
-    for table in TABLES:
-        row = (
-            await db.execute(
-                text(f"SELECT count(*), md5(string_agg(t::text, '|' ORDER BY t::text)) FROM {table} t")  # noqa: S608 (fixed table list)
-            )
-        ).one()
-        out[table] = (row[0], row[1])
-    return out
 
-
-async def test_a_full_demo_session_writes_nothing(demo_client, demo_settings, session_factory, storage, db):
-    from app.core.security import generate_api_key
-    from app.db.models import ApiKey
-
-    client, _ = demo_client
-    await run_seed(demo_settings, session_factory, storage, live=1)
-    user = await db.scalar(select(User).where(User.email == demo_settings.demo_email))
-    endpoint = await db.scalar(
-        select(Endpoint).where(Endpoint.user_id == user.id, Endpoint.enabled.is_(True))
+async def template_fingerprint(db, email):
+    """Everything the template owns, hashed: proves visitors never touch it."""
+    sql = text(
+        """
+        SELECT md5(string_agg(x, '|' ORDER BY x)) FROM (
+          SELECT u::text AS x FROM users u WHERE u.email = :e
+          UNION ALL SELECT ep::text FROM endpoints ep JOIN users u ON u.id = ep.user_id WHERE u.email = :e
+          UNION ALL SELECT k::text FROM api_keys k JOIN users u ON u.id = k.user_id WHERE u.email = :e
+          UNION ALL SELECT ev::text FROM events ev JOIN endpoints ep ON ep.id = ev.endpoint_id
+                    JOIN users u ON u.id = ep.user_id WHERE u.email = :e
+          UNION ALL SELECT d::text FROM deliveries d JOIN events ev ON ev.id = d.event_id
+                    JOIN endpoints ep ON ep.id = ev.endpoint_id
+                    JOIN users u ON u.id = ep.user_id WHERE u.email = :e
+        ) t
+        """
     )
-    event = await db.scalar(select(Event).join(Endpoint).where(Endpoint.user_id == user.id))
-    delivery = await db.scalar(select(Delivery).where(Delivery.event_id == event.id))
-    # a demo API key whose raw value we know, to try ingesting with it
-    raw_key = generate_api_key()
-    key = ApiKey(user_id=user.id, name="known", key_prefix=raw_key.prefix, key_hash=raw_key.hash)
-    db.add(key)
+    return (await db.execute(sql, {"e": email})).scalar()
+
+
+@pytest.fixture
+async def seeded(demo_client, demo_settings, session_factory, storage, db):
+    _, app = demo_client
+    await run_seed(demo_settings, session_factory, storage, events=40, live=0)
+    return app
+
+
+async def test_each_demo_sign_in_gets_a_private_copy(seeded, demo_settings, db):
+    before = await template_fingerprint(db, demo_settings.demo_email)
+    a, ha, user_a = await demo_login(seeded, demo_settings)
+    b, hb, user_b = await demo_login(seeded, demo_settings)
+    async with a, b:
+        assert user_a["is_demo"] and user_b["is_demo"] and user_a["id"] != user_b["id"]
+        assert user_a["email"].endswith(SANDBOX_DOMAIN) and user_a["demo_expires_at"]
+        events_a = (await a.get("/api/v1/events?limit=1", headers=ha)).json()
+        assert events_a["pagination"]["total"] == 40
+        assert (await b.get("/api/v1/events?limit=1", headers=hb)).json()["pagination"]["total"] == 40
+
+        # A changes things...
+        eps_a = (await a.get("/api/v1/endpoints", headers=ha)).json()["items"]
+        await a.patch(f"/api/v1/endpoints/{eps_a[0]['id']}", json={"name": "Renamed by A"}, headers=ha)
+        created = await a.post(
+            "/api/v1/endpoints", json={"name": "A's own", "url": "https://hooks.example.com/a"}, headers=ha
+        )
+        assert created.status_code == 201
+        # ...B sees none of it, and can't reach A's resources
+        names_b = [e["name"] for e in (await b.get("/api/v1/endpoints", headers=hb)).json()["items"]]
+        assert "Renamed by A" not in names_b and "A's own" not in names_b
+        assert (await b.get(f"/api/v1/endpoints/{eps_a[0]['id']}", headers=hb)).status_code == 404
+    assert await template_fingerprint(db, demo_settings.demo_email) == before
+
+
+async def test_a_copy_is_fully_interactive(seeded, demo_settings, storage):
+    a, h, _ = await demo_login(seeded, demo_settings)
+    async with a:
+        endpoints = (await a.get("/api/v1/endpoints", headers=h)).json()["items"]
+        enabled = next(e for e in endpoints if e["enabled"])
+        assert (await a.post(f"/api/v1/endpoints/{enabled['id']}/test", headers=h)).status_code == 202
+        failed = (await a.get("/api/v1/events?status=failed&limit=1", headers=h)).json()["items"]
+        if failed and next(e for e in endpoints if e["id"] == failed[0]["endpoint_id"])["enabled"]:
+            replay = await a.post(f"/api/v1/events/{failed[0]['id']}/replay", headers=h)
+            assert replay.status_code == 202  # reads the shared sample payload
+        key = (await a.post("/api/v1/api-keys", json={"name": "mine"}, headers=h)).json()["key"]
+        sent = await a.post(
+            f"/api/v1/ingest/{enabled['id']}",
+            json={"event_type": "order.created", "data": {"n": 1}},
+            headers={"Authorization": f"Bearer {key}"},
+        )
+        assert sent.status_code == 202
+        payload = await a.get(f"/api/v1/events/{sent.json()['event_id']}/payload", headers=h)
+        assert payload.status_code == 200
+
+
+async def test_sign_out_deletes_the_copy_but_not_shared_payloads(seeded, demo_settings, storage, db):
+    shared = set(storage.objects)
+    a, h, user = await demo_login(seeded, demo_settings)
+    async with a:
+        enabled = next(
+            e for e in (await a.get("/api/v1/endpoints", headers=h)).json()["items"] if e["enabled"]
+        )
+        await a.post(f"/api/v1/endpoints/{enabled['id']}/test", headers=h)
+        own = {k for k in storage.objects if k.startswith(f"events/{user['id']}/")}
+        assert len(own) == 1
+        assert (await a.post("/api/v1/auth/logout", headers=h)).status_code == 204
+        assert (await a.post("/api/v1/auth/refresh")).status_code == 401
+    assert await db.scalar(select(User).where(User.id == uuid.UUID(user["id"]))) is None
+    assert not (own & set(storage.objects))  # what the visitor created is gone
+    assert shared <= set(storage.objects)  # the template's payloads are untouched
+
+
+async def test_deleting_a_copied_endpoint_keeps_shared_payloads(seeded, demo_settings, storage):
+    shared = set(storage.objects)
+    a, h, _ = await demo_login(seeded, demo_settings)
+    async with a:
+        for e in (await a.get("/api/v1/endpoints", headers=h)).json()["items"]:
+            assert (await a.delete(f"/api/v1/endpoints/{e['id']}", headers=h)).status_code == 204
+    assert shared <= set(storage.objects)
+    b, hb, _ = await demo_login(seeded, demo_settings)  # the next visitor still gets everything
+    async with b:
+        event = (await b.get("/api/v1/events?limit=1", headers=hb)).json()["items"][0]
+        assert (await b.get(f"/api/v1/events/{event['id']}/payload", headers=hb)).status_code == 200
+
+
+async def test_expired_copies_are_refused_then_swept(seeded, demo_settings, session_factory, storage, db):
+    a, h, user = await demo_login(seeded, demo_settings)
+    async with a:
+        await db.execute(
+            update(User).where(User.id == uuid.UUID(user["id"])).values(demo_expires_at=datetime.now(UTC))
+        )
+        await db.commit()
+        me = await a.get("/api/v1/auth/me", headers=h)
+        assert me.status_code == 401 and me.json()["error"]["code"] == "DEMO_EXPIRED"
+        assert (await a.post("/api/v1/auth/refresh")).status_code == 401
+    assert await sweep_expired(session_factory, storage) == 1
+    assert await db.scalar(select(User).where(User.id == uuid.UUID(user["id"]))) is None
+
+
+async def test_copies_look_recent_even_from_an_old_template(seeded, demo_settings, db):
+    # age the template's history by 10 days
+    await db.execute(text("UPDATE events SET created_at = created_at - interval '10 days'"))
+    await db.execute(text("UPDATE delivery_attempts SET attempted_at = attempted_at - interval '10 days'"))
     await db.commit()
-    objects_before = dict(storage.objects)
-    before = await fingerprint(db)
-
-    # sign in, refresh, browse everything
-    login = await client.post(
-        "/api/v1/auth/login",
-        json={"email": demo_settings.demo_email, "password": demo_settings.demo_password},
-    )
-    assert login.status_code == 200
-    h = {"Authorization": f"Bearer {login.json()['access_token']}"}
-    assert (await client.post("/api/v1/auth/refresh")).status_code == 200
-    for path in (
-        "/api/v1/auth/me",
-        "/api/v1/dashboard/stats?range=24h",
-        "/api/v1/dashboard/activity",
-        "/api/v1/analytics/overview?range=30d",
-        "/api/v1/endpoints",
-        f"/api/v1/endpoints/{endpoint.id}",
-        "/api/v1/events?status=failed",
-        f"/api/v1/events/{event.id}",
-        f"/api/v1/events/{event.id}/payload",
-        f"/api/v1/events/{event.id}/deliveries",
-        f"/api/v1/deliveries/{delivery.id}",
-        f"/api/v1/deliveries/{delivery.id}/attempts",
-        "/api/v1/api-keys",
-    ):
-        assert (await client.get(path, headers=h)).status_code == 200, path
-
-    # every way to change something is refused
-    attempts = [
-        ("POST", "/api/v1/endpoints", {"name": "x", "url": "https://hooks.example.com/x"}),
-        ("PATCH", f"/api/v1/endpoints/{endpoint.id}", {"enabled": False}),
-        ("DELETE", f"/api/v1/endpoints/{endpoint.id}", None),
-        ("POST", f"/api/v1/endpoints/{endpoint.id}/rotate-secret", None),
-        ("POST", f"/api/v1/endpoints/{endpoint.id}/test", None),
-        ("POST", f"/api/v1/events/{event.id}/replay", None),
-        ("POST", "/api/v1/api-keys", {"name": "x"}),
-        ("DELETE", f"/api/v1/api-keys/{key.id}", None),
-        (
-            "POST",
-            "/api/v1/auth/change-password",
-            {"current_password": "x", "new_password": "Another-Passw0rd"},
-        ),
-    ]
-    for method, path, body in attempts:
-        res = await client.request(method, path, json=body, headers=h)
-        assert res.status_code == 403, (method, path, res.text)
-        assert res.json()["error"]["code"] == "DEMO_READ_ONLY"
-    ingest = await client.post(
-        f"/api/v1/ingest/{endpoint.id}",
-        json={"event_type": "order.created", "data": {}},
-        headers={"Authorization": f"Bearer {raw_key.raw}"},
-    )
-    assert ingest.status_code == 403 and ingest.json()["error"]["code"] == "DEMO_READ_ONLY"
-    assert (await client.post("/api/v1/auth/logout", headers=h)).status_code == 204
-
-    db.expire_all()
-    assert await fingerprint(db) == before  # not a single row added, changed or removed
-    assert storage.objects == objects_before  # and nothing stored
+    a, h, _ = await demo_login(seeded, demo_settings)
+    async with a:
+        newest = (await a.get("/api/v1/events?limit=1", headers=h)).json()["items"][0]["created_at"]
+        age = datetime.now(UTC) - datetime.fromisoformat(newest)
+        assert timedelta(minutes=50) < age < timedelta(minutes=70)
+        stats = (await a.get("/api/v1/dashboard/stats?range=24h", headers=h)).json()
+        assert stats["total_events"] > 0
 
 
-async def test_demo_sessions_are_stateless_and_still_secure(
-    demo_client, demo_settings, session_factory, storage, db
-):
-    from app.db.models import RefreshToken
+async def test_copies_are_capped(demo_settings, session_factory, storage, db):
+    capped = demo_settings.model_copy(update={"demo_max_sandboxes": 1})
+    app = create_app(capped, storage=storage)
+    app.state.session_factory = session_factory
+    await run_seed(capped, session_factory, storage, events=5, live=0)
+    a, _, _ = await demo_login(app, capped)
+    async with a, httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as b:
+        busy = await b.post(
+            "/api/v1/auth/login", json={"email": capped.demo_email, "password": capped.demo_password}
+        )
+        assert busy.status_code == 429 and busy.json()["error"]["code"] == "DEMO_BUSY"
 
+
+async def test_reseeding_ends_active_copies(seeded, demo_settings, session_factory, storage, db):
+    a, _, user = await demo_login(seeded, demo_settings)
+    await a.aclose()
+    await run_seed(demo_settings, session_factory, storage, events=10, live=0)
+    assert await db.scalar(select(User).where(User.id == uuid.UUID(user["id"]))) is None
+
+
+async def test_demo_info_reports_the_time_limit(demo_client, demo_settings):
     client, _ = demo_client
-    await run_seed(demo_settings, session_factory, storage, live=0)
-    login = await client.post(
-        "/api/v1/auth/login",
-        json={"email": demo_settings.demo_email, "password": demo_settings.demo_password},
-    )
-    assert login.status_code == 200
-    assert await count(db, select(RefreshToken)) == 0  # no token stored
-    # the refresh cookie works, and keeps working, without a database row
-    for _ in range(3):
-        res = await client.post("/api/v1/auth/refresh")
-        assert res.status_code == 200 and res.json()["access_token"]
-    # a forged or foreign token is rejected
-    client.cookies.set("whh_refresh", "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ4In0.forged", path="/api/v1/auth")
-    assert (await client.post("/api/v1/auth/refresh")).status_code == 401
-    # regular accounts still get rotating, stored refresh tokens
-    other = await client.post(
-        "/api/v1/auth/register", json={"email": "real@example.com", "password": "Real-Passw0rd1"}
-    )
-    assert other.status_code == 201
-    assert await count(db, select(RefreshToken)) == 1
-
-
-async def test_demo_session_ends_when_the_demo_is_switched_off(
-    demo_client, demo_settings, settings, session_factory, storage, db
-):
-    client, _ = demo_client
-    await run_seed(demo_settings, session_factory, storage, live=0)
-    await client.post(
-        "/api/v1/auth/login",
-        json={"email": demo_settings.demo_email, "password": demo_settings.demo_password},
-    )
-    cookie = client.cookies.get("whh_refresh")
-    off = create_app(settings, storage=storage)  # DEMO_ENABLED=false
-    off.state.session_factory = session_factory
-    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=off), base_url="http://test") as c:
-        c.cookies.set("whh_refresh", cookie, path="/api/v1/auth")
-        assert (await c.post("/api/v1/auth/refresh")).status_code == 401
+    info = (await client.get("/api/v1/demo")).json()
+    assert info["sandbox_minutes"] == demo_settings.demo_sandbox_ttl_minutes

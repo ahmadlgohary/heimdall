@@ -21,6 +21,7 @@ x-backend: &backend
     JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET}
     ENCRYPTION_KEY: ${ENCRYPTION_KEY:?set ENCRYPTION_KEY}
     STORAGE_BACKEND: s3
+    FRONTEND_DIST: /app/web # where the image puts the built app; ignore any local path from .env
     ALLOW_PRIVATE_DESTINATIONS: "false"
     # Public demo (plan §14.3): set DEMO_ENABLED=true and run `make prod-seed`. The worker reaches the
     # built-in receiver through the public URL (API_URL), which nginx forwards to the API.

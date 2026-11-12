@@ -1,7 +1,7 @@
 import { screen, waitFor, within } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 import { db, deliveriesFor } from '@/mocks/db'
-import { renderApp, signInAsDemo, signInAsSeededOwner } from '../utils'
+import { renderApp, signInAsDemo } from '../utils'
 
 const rows = (table: HTMLElement) => within(table).getAllByRole('row').slice(1)
 
@@ -68,7 +68,7 @@ describe('event details', () => {
   })
 
   it('requires confirmation before replaying, then adds a manual execution', async () => {
-    signInAsSeededOwner()
+    signInAsDemo()
     const ev = settledFailedEvent()
     // make sure the endpoint accepts replays
     db.endpoints.find((e) => e.id === ev.endpoint_id)!.enabled = true

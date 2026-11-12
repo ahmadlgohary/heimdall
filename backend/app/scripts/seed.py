@@ -15,8 +15,10 @@ What it builds for DEMO_EMAIL / DEMO_PASSWORD:
 * A few live events, ingested through the real pipeline (outbox → RabbitMQ → worker
   → receiver). These need the publisher and worker running.
 
-Every run deletes the previous demo account (and its stored payloads) first, so it's
-safe to run on a schedule to undo whatever visitors changed.
+This builds the demo *template*. Visitors never use it directly: each "Sign in to
+the demo" gets a private copy (app.services.demo_service), deleted on sign-out or
+after DEMO_SANDBOX_TTL_MINUTES, so the template never needs resetting. Re-running
+the seed rebuilds the template and ends every active copy.
 """
 
 import argparse
@@ -43,6 +45,7 @@ from app.db.models import (
     User,
 )
 from app.db.session import create_engine, create_session_factory
+from app.services.demo_service import delete_all_sandboxes
 from app.services.event_service import EventService, build_envelope, request_fingerprint
 from app.services.storage_service import PayloadStorage, build_storage, payload_key
 from app.utils.retry import backoff_delay
@@ -401,6 +404,9 @@ async def seed(
     now = datetime.now(UTC)
 
     try:
+        copies = await delete_all_sandboxes(factory, storage)
+        if copies:
+            log(f"Ended {copies} active demo copies.")
         removed = await reset_demo_account(factory, storage, settings.demo_email)
         if removed:
             log(f"Removed the previous demo account and {removed} stored payloads.")

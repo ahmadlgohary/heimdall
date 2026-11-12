@@ -49,6 +49,7 @@ export default function LoginPage() {
           <DemoPanel
             email={demo.data.email}
             password={demo.data.password}
+            minutes={demo.data.sandbox_minutes ?? null}
             pending={demoPending}
             onSignIn={async () => {
               setDemoPending(true)
@@ -89,14 +90,21 @@ export default function LoginPage() {
   )
 }
 
+function duration(minutes: number) {
+  if (minutes % 60 === 0) return `${minutes / 60} hour${minutes === 60 ? '' : 's'}`
+  return `${minutes} minutes`
+}
+
 function DemoPanel({
   email,
   password,
+  minutes,
   pending,
   onSignIn,
 }: {
   email: string
   password: string
+  minutes: number | null
   pending: boolean
   onSignIn: () => void
 }) {
@@ -106,8 +114,8 @@ function DemoPanel({
         Try the demo
       </h2>
       <p className="mt-1 text-sm text-muted">
-        A read-only account with sample history. Explore endpoints, events, deliveries and analytics; nothing you do is
-        saved.
+        Get your own copy of a demo account with sample history and a built-in test receiver. Change anything and send
+        real events: nobody else sees it, and it’s deleted when you sign out{minutes ? ` or after ${duration(minutes)}` : ''}.
       </p>
       <dl className="mt-3 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-sm">
         <dt className="text-muted">Email</dt>
