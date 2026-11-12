@@ -213,6 +213,17 @@ jobs:
           path: frontend/test-results
           if-no-files-found: ignore
 
+      - name: Production image (API + web app) against the stack's database and broker
+        run: |
+          docker build -t heimdall:ci .
+          docker run -d --name app-image --network heimdall_internal -p 8001:8000 \
+            -e DATABASE_URL=postgresql+asyncpg://heimdall:heimdall@postgres:5432/heimdall \
+            -e RABBITMQ_URL=amqp://heimdall:heimdall@rabbitmq:5672/ \
+            -e JWT_SECRET=ci-only-secret-ci-only-secret-0123456789 -e STORAGE_BACKEND=local \
+            heimdall:ci
+          ./infrastructure/scripts/check-app-image.sh http://localhost:8001
+          docker rm -f app-image
+
       - name: Service status and logs
         if: always()
         run: |

@@ -1,6 +1,6 @@
 # Production-like stack: managed PostgreSQL (Neon) and S3-compatible storage come from .env;
-# RabbitMQ runs here with a persistent volume. No dev tools, no mock receiver, nothing
-# but the frontend published on the host.
+# RabbitMQ runs here with a persistent volume. One image (the root Dockerfile) serves the
+# API and the web app from the same origin; it's the only thing published on the host.
 #
 #   docker compose -f docker-compose.prod.yml up -d --build      (or: make prod-up)
 
@@ -8,8 +8,9 @@ name: heimdall-prod
 
 x-backend: &backend
   build:
-    context: ./backend
-  image: heimdall-backend:latest
+    context: .
+    dockerfile: Dockerfile
+  image: heimdall:latest
   restart: always
   env_file: [.env]
   environment: &backend-env
@@ -57,6 +58,8 @@ services:
 
   api:
     <<: *backend
+    ports:
+      - "${APP_PORT:-8000}:8000" # API + web app
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -86,20 +89,6 @@ services:
         condition: service_completed_successfully
       rabbitmq:
         condition: service_healthy
-
-  frontend:
-    build:
-      context: ./frontend
-    image: heimdall-frontend:latest
-    restart: always
-    environment:
-      API_UPSTREAM: http://api:8000
-    ports:
-      - "${FRONTEND_PORT:-8080}:8080"
-    depends_on:
-      api:
-        condition: service_healthy
-    networks: [internal]
 
 volumes:
   rabbitmq_data:

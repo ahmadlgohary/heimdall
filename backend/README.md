@@ -29,6 +29,20 @@ frontend. The frontend's nginx proxies `/api` to the API, so the app is served
 from one origin. Point endpoints at `http://mock-receiver:9000/hooks/ok`.
 Host ports are configurable in `.env` (`POSTGRES_PORT`, `API_PORT`, ...).
 
+**Production image.** The repository root's `Dockerfile` builds one image with
+the API *and* the web app: the API serves the built frontend from the same
+origin (`FRONTEND_DIST`). The page can't load before the API is up, the login
+cookie is same-origin and no CORS setup is needed. `make image` builds it.
+`infrastructure/scripts/check-app-image.sh <url>` checks a running one.
+
+- **Routes:** API routes, `/docs`, `/health`, `/ready` and `/demo-receiver`
+  come first. Then `/assets/*` (hashed files, cached for a year), then
+  top-level files like `/favicon.svg`.
+- **Page links:** any other GET with no matching route returns `index.html`,
+  so links like `/events/<id>` work.
+- **API behaviour is unchanged:** unknown `/api/...` paths still get a JSON
+  404, and a wrong method still gets 405.
+
 `docker-compose.prod.yml` is the production variant. It uses Neon for
 Postgres and S3-compatible storage from `.env`, sets `APP_ENV=production`,
 runs no dev tools, and publishes only the frontend.

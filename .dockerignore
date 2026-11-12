@@ -1,0 +1,21 @@
+# Build context for the root Dockerfile (production image). Keep it small and secret-free.
+.git
+.github
+**/.env
+**/.env.*
+**/node_modules
+**/.venv
+**/__pycache__
+**/.pytest_cache
+**/.ruff_cache
+**/.coverage
+**/.storage
+**/.wrangler
+frontend/dist
+frontend/test-results
+frontend/playwright-report
+backend/tests
+serverless
+plan
+infrastructure
+start-app

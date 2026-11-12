@@ -101,6 +101,11 @@ class Settings(BaseSettings):
     demo_receiver_enabled: bool = False
     demo_receiver_url: str = ""
 
+    # Directory of the built frontend (frontend/dist). When set, the API also serves the
+    # web app from the same origin. The production image sets it; leave it empty for local
+    # development with Vite.
+    frontend_dist: str = ""
+
     # Login/register/password: slows down guessing.
     auth_rate_limit_per_minute: int = 20
     # Session refresh runs on every page load and its token can't be guessed, so it gets

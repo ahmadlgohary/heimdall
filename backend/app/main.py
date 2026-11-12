@@ -5,9 +5,11 @@ import time
 import uuid
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 
 from app.api.health import router as health_router
 from app.api.v1.router import api_router
@@ -16,6 +18,7 @@ from app.core.exceptions import register_exception_handlers
 from app.core.logging import configure_logging
 from app.db.session import create_engine, create_session_factory
 from app.services.storage_service import PayloadStorage, build_storage
+from app.web import mount_frontend
 
 logger = logging.getLogger("app.request")
 
@@ -66,6 +69,9 @@ def create_app(settings: Settings | None = None, *, storage: PayloadStorage | No
         max_age=600,
     )
 
+    # compress text responses (the main JS bundle is ~600 KB raw, ~185 KB gzipped)
+    app.add_middleware(GZipMiddleware, minimum_size=1024)
+
     @app.middleware("http")
     async def request_context(request: Request, call_next):
         request_id = request.headers.get("x-request-id") or uuid.uuid4().hex
@@ -74,7 +80,12 @@ def create_app(settings: Settings | None = None, *, storage: PayloadStorage | No
         response.headers["X-Request-ID"] = request_id
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["Referrer-Policy"] = "no-referrer"
-        if request.url.path not in ("/health", "/ready"):
+        response.headers["X-Frame-Options"] = "DENY"
+        path = request.url.path
+        # log API traffic and any error; skip health probes and the web app's static files
+        if path not in ("/health", "/ready") and (
+            path.startswith(("/api/", "/demo-receiver/")) or response.status_code >= 400
+        ):
             logger.info(
                 "request",
                 extra={
@@ -94,6 +105,9 @@ def create_app(settings: Settings | None = None, *, storage: PayloadStorage | No
         from app.dev.mock_receiver import router as receiver_router
 
         app.include_router(receiver_router, prefix="/demo-receiver", include_in_schema=False)
+    if settings.frontend_dist:
+        # last: its catch-all route must not shadow anything above
+        mount_frontend(app, Path(settings.frontend_dist))
     return app
 
 

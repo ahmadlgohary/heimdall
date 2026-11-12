@@ -129,6 +129,10 @@ check: lint test test-frontend test-worker smoke e2e-stack ## Everything CI chec
 
 ## ---------- production ----------
 
+.PHONY: image
+image: ## Build the production image (API + web app in one)
+	docker build -t heimdall:latest .
+
 .PHONY: prod-up
 prod-up: ## Start the production stack (needs Neon/S3 settings in .env)
 	$(PROD) up --build -d

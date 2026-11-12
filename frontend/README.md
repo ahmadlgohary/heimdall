@@ -30,6 +30,14 @@ as such, so it can't be mistaken for live processing.
 Playwright needs its browser once: `npx playwright install chromium`. To run
 the same E2E specs against a deployed stack, set `PLAYWRIGHT_BASE_URL`.
 
+## Production
+
+In production the API serves the built app from the same origin. The root
+`Dockerfile` builds both into one image (`make image`), so there is no separate
+web server and `VITE_API_URL` stays empty. The `Dockerfile` and nginx template
+in this folder remain for the development compose stack, or for hosting the app
+separately behind a CDN.
+
 ## Environment
 
 | Variable | Default | Purpose |
