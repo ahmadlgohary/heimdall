@@ -20,11 +20,14 @@ enabled = true
 
 [env.production]
 name = "heimdall-ingestion"
-workers_dev = false
-# Public route from the spec: POST https://ingest.yourdomain.com/{endpoint_id}
-routes = [{ pattern = "ingest.yourdomain.com", custom_domain = true }]
+# No domain on Cloudflare yet, so the public URL is the workers.dev one:
+#   POST https://heimdall-ingestion.a-elgohary.workers.dev/{endpoint_id}
+# Once a domain is on Cloudflare, use the spec's route instead:
+#   workers_dev = false
+#   routes = [{ pattern = "ingest.yourdomain.com", custom_domain = true }]
+workers_dev = true
 
 [env.production.vars]
-API_ORIGIN = "https://heimdall-nnjp.onrender.com"
+API_ORIGIN = "https://heimdall.synteq.app"
 MAX_BODY_BYTES = "262144"
 UPSTREAM_TIMEOUT_MS = "10000"

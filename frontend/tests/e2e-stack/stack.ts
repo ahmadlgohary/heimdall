@@ -30,6 +30,8 @@ export const STACK = {
   rabbitmq: env.RABBITMQ_MGMT_URL ?? `http://localhost:${port('RABBITMQ_MANAGEMENT_PORT', 15672)}`,
   rabbitUser: env.RABBITMQ_USER ?? 'heimdall',
   rabbitPassword: env.RABBITMQ_PASSWORD ?? 'heimdall',
+  /** the broker's virtual host: "/" locally; CloudAMQP uses one named after the user */
+  rabbitVhost: env.RABBITMQ_VHOST ?? '/',
   /** how the *worker* reaches the receiver, inside the docker network */
   receiverForWorker: env.RECEIVER_URL_FOR_WORKER ?? 'http://mock-receiver:9000',
   /** the Cloudflare Worker in front of the API: `make worker-dev` serves it on :8787 */
@@ -136,7 +138,7 @@ export function signatureIsValid(secret: string, delivery: ReceivedDelivery) {
 
 /** Messages acknowledged on the delivery queue, from the RabbitMQ management API. */
 export async function deliveryQueueAcks(request: APIRequestContext): Promise<number> {
-  const res = await request.get(`${STACK.rabbitmq}/api/queues/%2F/heimdall.deliveries`, {
+  const res = await request.get(`${STACK.rabbitmq}/api/queues/${encodeURIComponent(STACK.rabbitVhost)}/heimdall.deliveries`, {
     headers: {
       Authorization: `Basic ${Buffer.from(`${STACK.rabbitUser}:${STACK.rabbitPassword}`).toString('base64')}`,
     },
