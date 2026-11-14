@@ -12,6 +12,8 @@ export default defineConfig({
   fullyParallel: false,
   retries: 0,
   timeout: 90_000,
+  // a deployed stack (STACK_URL set) answers slower than local containers
+  expect: { timeout: process.env.STACK_URL ? 15_000 : 5_000 },
   reporter: process.env.CI ? [['github'], ['list']] : 'list',
   use: {
     baseURL: STACK.frontend,

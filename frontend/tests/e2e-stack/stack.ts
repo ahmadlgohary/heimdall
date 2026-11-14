@@ -32,6 +32,8 @@ export const STACK = {
   rabbitPassword: env.RABBITMQ_PASSWORD ?? 'heimdall',
   /** how the *worker* reaches the receiver, inside the docker network */
   receiverForWorker: env.RECEIVER_URL_FOR_WORKER ?? 'http://mock-receiver:9000',
+  /** the Cloudflare Worker in front of the API: `make worker-dev` serves it on :8787 */
+  edge: env.EDGE_URL ?? 'http://localhost:8787',
 }
 
 export const PASSWORD = 'E2e-Stack-Passw0rd'
