@@ -2,7 +2,9 @@
 # Production image: the API serves the built web app from the same origin.
 # Build from the repository root:   docker build -t heimdall .
 # The same image runs every backend process; pick one with the command:
-#   (default)   uvicorn: API + web app on :8000
+#   (default)   start.sh: migrations, then API + web app (outbox publisher inside) and the
+#               delivery worker in one container, on $PORT (8000). For single-container hosts.
+#   api         uvicorn app.main:app --host 0.0.0.0 --port 8000
 #   worker      python -m app.workers.delivery_worker
 #   publisher   python -m app.workers.outbox_worker
 #   migrate     alembic upgrade head
@@ -39,5 +41,5 @@ ENV PATH="/app/.venv/bin:$PATH" PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 \
 USER app
 EXPOSE 8000
 HEALTHCHECK --interval=15s --timeout=3s --start-period=10s \
-  CMD python -c "import urllib.request,sys; sys.exit(urllib.request.urlopen('http://127.0.0.1:8000/health').status != 200)" || exit 1
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers", "--forwarded-allow-ips", "*"]
+  CMD python -c "import os,urllib.request,sys; sys.exit(urllib.request.urlopen('http://127.0.0.1:%s/health' % os.environ.get('PORT', '8000')).status != 200)" || exit 1
+CMD ["/app/start.sh"]
