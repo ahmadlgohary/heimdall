@@ -134,7 +134,7 @@ image: ## Build the production image (API + web app in one)
 	docker build -t heimdall:latest .
 
 .PHONY: prod-up
-prod-up: ## Start the production stack (needs Neon/S3 settings in .env)
+prod-up: ## Start the production stack (needs Neon/CloudAMQP/S3 settings in .env)
 	$(PROD) up --build -d
 
 .PHONY: prod-down

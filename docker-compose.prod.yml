@@ -1,5 +1,5 @@
-# Production-like stack: managed PostgreSQL (Neon) and S3-compatible storage come from .env;
-# RabbitMQ runs here with a persistent volume. One image (the root Dockerfile) serves the
+# Production-like stack: managed PostgreSQL (Neon), RabbitMQ (CloudAMQP) and S3-compatible
+# storage all come from .env; nothing stateful runs here. One image (the root Dockerfile) serves the
 # API and the web app from the same origin; it's the only thing published on the host.
 #
 #   docker compose -f docker-compose.prod.yml up -d --build      (or: make prod-up)
@@ -17,7 +17,7 @@ x-backend: &backend
     APP_ENV: production
     JSON_LOGS: "true"
     DATABASE_URL: ${DATABASE_URL:?set DATABASE_URL (Neon pooled URL)}
-    RABBITMQ_URL: amqp://${RABBITMQ_USER:?set RABBITMQ_USER}:${RABBITMQ_PASSWORD:?set RABBITMQ_PASSWORD}@rabbitmq:5672/
+    RABBITMQ_URL: ${RABBITMQ_URL:?set RABBITMQ_URL (CloudAMQP amqps:// URL)}
     JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET}
     ENCRYPTION_KEY: ${ENCRYPTION_KEY:?set ENCRYPTION_KEY}
     STORAGE_BACKEND: s3
@@ -33,23 +33,6 @@ x-backend: &backend
     options: { max-size: "20m", max-file: "5" }
 
 services:
-  rabbitmq:
-    image: rabbitmq:4-management-alpine
-    restart: always
-    hostname: rabbitmq
-    environment:
-      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:?set RABBITMQ_USER}
-      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:?set RABBITMQ_PASSWORD}
-    volumes:
-      - rabbitmq_data:/var/lib/rabbitmq
-      - ./infrastructure/docker/rabbitmq/rabbitmq.conf:/etc/rabbitmq/conf.d/90-heimdall.conf:ro
-    healthcheck:
-      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
-      interval: 10s
-      timeout: 10s
-      retries: 20
-    networks: [internal]
-
   migrate:
     <<: *backend
     command: ["alembic", "upgrade", "head"]
@@ -59,13 +42,13 @@ services:
 
   api:
     <<: *backend
+    # the workers and migrations run as their own services here, so not the all-in-one start.sh
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers", "--forwarded-allow-ips", "*"]
     ports:
       - "${APP_PORT:-8000}:8000" # API + web app
     depends_on:
       migrate:
         condition: service_completed_successfully
-      rabbitmq:
-        condition: service_healthy
 
   publisher:
     <<: *backend
@@ -75,8 +58,6 @@ services:
     depends_on:
       migrate:
         condition: service_completed_successfully
-      rabbitmq:
-        condition: service_healthy
 
   worker:
     <<: *backend
@@ -88,11 +69,6 @@ services:
     depends_on:
       migrate:
         condition: service_completed_successfully
-      rabbitmq:
-        condition: service_healthy
-
-volumes:
-  rabbitmq_data:
 
 networks:
   internal:

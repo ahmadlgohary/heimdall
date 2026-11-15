@@ -153,6 +153,8 @@ jobs:
 
       - name: Generated types are up to date
         run: |
+          # wrangler types reads secret names from .dev.vars; use the example so CI matches local
+          cp .dev.vars.example .dev.vars
           npm run types
           git diff --exit-code worker-configuration.d.ts
 
@@ -194,13 +196,27 @@ jobs:
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: frontend/package-lock.json
+          cache-dependency-path: |
+            frontend/package-lock.json
+            serverless/ingestion-worker/package-lock.json
 
       - name: Install Playwright
         working-directory: frontend
         run: |
           npm ci
           npx playwright install --with-deps chromium
+
+      - name: Start the edge worker in front of the stack's API (Scenario 4)
+        env:
+          WRANGLER_SEND_METRICS: "false"
+        run: |
+          npm ci --prefix serverless/ingestion-worker
+          nohup make worker-dev > worker-dev.log 2>&1 &
+          for i in $(seq 60); do
+            curl -sf http://localhost:8787/health && exit 0
+            sleep 1
+          done
+          echo "edge worker didn't start:"; cat worker-dev.log; exit 1
 
       - name: End-to-end scenarios (plan §11.5) against the stack
         run: make e2e-stack
@@ -210,7 +226,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: e2e-stack-report
-          path: frontend/test-results
+          path: |
+            frontend/test-results
+            worker-dev.log
           if-no-files-found: ignore
 
       - name: Production image (API + web app) against the stack's database and broker
@@ -243,5 +261,5 @@ jobs:
       - name: Validate docker-compose.prod.yml
         run: |
           cp .env.example .env
-          DATABASE_URL=postgresql://u:p@db.example/x JWT_SECRET=x ENCRYPTION_KEY=x \
+          DATABASE_URL=postgresql://u:p@db.example/x RABBITMQ_URL=amqps://u:p@mq.example/x JWT_SECRET=x ENCRYPTION_KEY=x \
             docker compose -f docker-compose.prod.yml config --quiet

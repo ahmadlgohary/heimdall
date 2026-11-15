@@ -44,7 +44,7 @@ cookie is same-origin and no CORS setup is needed. `make image` builds it.
   404, and a wrong method still gets 405.
 
 `docker-compose.prod.yml` is the production variant. It uses Neon for
-Postgres and S3-compatible storage from `.env`, sets `APP_ENV=production`,
+Postgres, CloudAMQP for RabbitMQ and S3-compatible storage from `.env`, sets `APP_ENV=production`,
 runs no dev tools, and publishes only the frontend.
 
 ## Run locally without Docker for the app
